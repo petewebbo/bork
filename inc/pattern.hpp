@@ -7,9 +7,9 @@ namespace bork {
 
 
 struct step {
-    int note{};
-    int vel{};
-    int len{};  
+    int _note{};
+    int _vel{};
+    int _len{};  
 };
 
 struct track {

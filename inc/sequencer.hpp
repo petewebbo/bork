@@ -27,7 +27,7 @@ struct sequencer {
         while (last_sample < num_samples) {
             auto next_step = _transport._track_transport[track_idx]._next_step;
             auto next_event_sample =
-                _transport._track_transport[track_idx].get_next_step_sample();
+                _transport._track_transport[track_idx].get_next_step_sample(num_samples);
             last_sample = next_event_sample;
 
             if (next_event_sample == STEP_OUT_OF_BLOCK) {
@@ -46,8 +46,9 @@ struct sequencer {
             // if we are at an event and not the end of the block
             // check the pattern step and trigger an event if required
             if (samples_processed == next_event_sample) {
-                if (_pattern._tracks[track_idx]._steps[next_step].note) {
-                    _samplers[track_idx].trigger();
+                auto& step = _pattern._tracks[track_idx]._steps[next_step];
+                if (step._note) {
+                    _samplers[track_idx].trigger(step);
                 }
             }
         }

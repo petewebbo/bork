@@ -86,8 +86,8 @@ struct track_transport {
         }
     }
 
-    uint32_t get_next_step_sample(bool update_step = true) {
-        auto sample = step_to_sample_in_block(_next_step);
+    uint32_t get_next_step_sample(uint32_t num_samples, bool update_step = true) {
+        auto sample = step_to_sample_in_block(_next_step, num_samples);
         if (update_step && sample != STEP_OUT_OF_BLOCK) {
             step_update();
         }
@@ -96,12 +96,19 @@ struct track_transport {
 
     // this will need to take the actual step so that it can account for
     // step delay and such
-    uint32_t step_to_sample_in_block(uint16_t step_idx) {
-        auto sample = static_cast<uint32_t>(step_idx * _samples_per_step) -
-                      _block_start_sample;
+    uint32_t step_to_sample_in_block(uint16_t step_idx, uint32_t num_samples) {
+        auto sample_in_cycle = static_cast<uint32_t>(step_idx * _samples_per_step);
+        uint32_t sample_in_block;
 
-        if (sample < (_block_end_sample-_block_start_sample)) {
-            return sample;
+        // deal with wraparound to start of cycle
+        if (sample_in_cycle < _block_start_sample) {
+            sample_in_block = _samples_per_cycle - _block_start_sample + sample_in_cycle;
+        } else {
+            sample_in_block = sample_in_cycle - _block_start_sample;
+        }
+
+        if (sample_in_block < num_samples) {
+            return sample_in_block;
         } else {
             return STEP_OUT_OF_BLOCK;
         }
