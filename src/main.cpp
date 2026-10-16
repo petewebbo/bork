@@ -9,7 +9,7 @@
 bork::sequencer sequencer;
 std::array<std::array<float, 8192>, 16> track_buffers{};
 std::array<float, 8192> main_buffer{};
-const int TRACKS_TO_PROCESS = 3;
+const int TRACKS_TO_PROCESS = 5;
 
 template<typename SampleType>
 class audio_client : public ezpz_portaudio<SampleType> {
@@ -51,16 +51,20 @@ int main() try {
         sequencer._pattern._tracks[0]._steps[i+6] = {._note = 1, ._vel=127};
         sequencer._pattern._tracks[0]._steps[i+8] = {._note = 1, ._vel=127};
     }
-    for (int i=0; i<16; i=i+2) {
-        sequencer._pattern._tracks[1]._steps[i+0] = {._note = 1, ._vel=80};
-        sequencer._pattern._tracks[1]._steps[i+1] = {._note = 1, ._vel=40};
-    }
     for (int i=4; i<16; i=i+8) {
-        sequencer._pattern._tracks[2]._steps[i+0] = {._note = 1, ._vel=90};
+        sequencer._pattern._tracks[1]._steps[i+0] = {._note = 1, ._vel=90};
     }
+    for (int i=0; i<16; i=i+2) {
+        sequencer._pattern._tracks[3]._steps[i+0] = {._note = 1, ._vel=80};
+        sequencer._pattern._tracks[3]._steps[i+1] = {._note = 1, ._vel=40};
+    }
+    sequencer._pattern._tracks[4]._steps[14] = {._note = 1, ._vel=40};
+    
     sequencer._samplers[0]._audio_file.load("/Users/petewebbo/code/bork/samples/tapetonic/Tonic_BD_E_C2S.wav");
-    sequencer._samplers[1]._audio_file.load("/Users/petewebbo/code/bork/samples/tapetonic/Tonic_HH_B_T1A_V1.wav");
+    sequencer._samplers[1]._audio_file.load("/Users/petewebbo/code/bork/samples/tapetonic/Tonic_SD_D_C2A.wav");
     sequencer._samplers[2]._audio_file.load("/Users/petewebbo/code/bork/samples/tapetonic/Tonic_Clap_D_ST_T1A.wav");
+    sequencer._samplers[3]._audio_file.load("/Users/petewebbo/code/bork/samples/tapetonic/Tonic_HH_B_T1A_V1.wav");
+    sequencer._samplers[4]._audio_file.load("/Users/petewebbo/code/bork/samples/tapetonic/Tonic_HHo_B_T1A.wav");
 
 
     audio_client<float> audio("bork");
