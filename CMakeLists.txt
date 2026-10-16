@@ -38,14 +38,19 @@ CPMAddPackage(
     OPTIONS "BUILD_TESTS OFF" "BUILD_EXAMPLES OFF"
 )
 
-add_executable(bork src/main.cpp)
+set(CURSES_NEED_NCURSES TRUE)
+find_package(Curses REQUIRED)
+
+add_executable(bork src/main.cpp tui/grid_tui.cpp)
 target_include_directories(bork PUBLIC
     inc
+    ${CURSES_INCLUDE_DIRS}
 )
 target_link_libraries(bork PRIVATE
     fmt::fmt
     portaudio_static
     AudioFile
+    ${CURSES_LIBRARIES}
 )
 
 include(CTest)
@@ -54,5 +59,8 @@ if(BUILD_TESTING)
     target_include_directories(portaudio_test PRIVATE inc)
     target_link_libraries(portaudio_test PRIVATE portaudio_static)
     add_test(NAME portaudio_wrapper COMMAND portaudio_test)
+    add_executable(grid_tui_test tests/grid_tui_test.cpp)
+    target_include_directories(grid_tui_test PRIVATE inc)
+    add_test(NAME grid_tui_model COMMAND grid_tui_test)
 endif()
 

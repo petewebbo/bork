@@ -1,6 +1,6 @@
 #include "transport.hpp"
 #include <algorithm>
-#include <iostream>
+#include <grid_tui.hpp>
 #include <array>
 #include <fmt/base.h>
 #include <ezpz_portaudio.hpp>
@@ -9,7 +9,7 @@
 bork::sequencer sequencer;
 std::array<std::array<float, 8192>, 16> track_buffers{};
 std::array<float, 8192> main_buffer{};
-const int TRACKS_TO_PROCESS = 5;
+const int TRACKS_TO_PROCESS = bork::GridWidget::ROWS;
 
 template<typename SampleType>
 class audio_client : public ezpz_portaudio<SampleType> {
@@ -73,8 +73,10 @@ int main() try {
     sequencer._transport.set_tempo(120.0f);
     audio.activate();
 
-    std::cout << "Press Enter to continue...";
-    std::cin.get();
+    // Temporary direct access: UI writes are intentionally not synchronised
+    // with the audio callback yet.
+    bork::run_grid_tui(sequencer._pattern);
+    audio.deactivate();
     
     return 0;
 } catch (const std::exception& error) {
