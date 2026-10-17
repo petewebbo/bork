@@ -64,15 +64,14 @@ struct sequencer {
         case sequencer_command::type::toggle_play:
             _is_playing = !_is_playing;
             break;
-        case sequencer_command::type::replace_pattern: {
-            if (command._slot >= NUM_EDIT_SLOTS) break;
-            // Every submitted slot is returned, even when its target is stale.
-            // One completion per outstanding slot guarantees capacity.
-            if (_patterns.edits_completed.size() == _patterns.edits_completed.capacity()) break;
-            if (command._generation == _generation && command._pattern_id == _pattern_id)
-                pattern = _patterns.edits[command._slot];
-            const bool returned = _patterns.edits_completed.try_push(command._slot);
-            (void)returned;
+        case sequencer_command::type::update_pattern: {
+            const auto* edit = _patterns.edits.front();
+            assert(edit); // Every marker must have one previously published payload.
+            if (!edit) break;
+            if (edit->generation == _generation && edit->pattern_id == _pattern_id)
+                pattern = edit->value;
+            // Stale payloads must also be popped to preserve marker alignment.
+            _patterns.edits.pop();
             break;
         }
         case sequencer_command::type::activate_pattern: {

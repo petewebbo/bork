@@ -112,10 +112,14 @@ pattern switches and remains reusable after paste.
   before its subsequent edits.
 - Apply a paste coherently at a callback boundary: do not let a large paste be
   partly applied in different callbacks or partly committed on queue-full.
-- Use a bounded paste-batch handoff rather than naively enqueueing many
-  individual step commands. Prepare the batch on the UI thread,
-  publish one command, and return ownership through a completion path. Queue or
-  transfer-slot exhaustion rejects the whole paste and leaves storage unchanged.
+- Use a four-entry SPSC pattern-payload queue rather than many individual step
+  commands. The sole UI producer checks both payload and command queues have
+  space, then publishes the complete pattern/ID/generation payload followed by
+  an `update_pattern` command marker. No reentrant submission or second producer.
+  A full queue rejects the whole edit before either publication.
+- Audio consumes one payload per marker, applies matching targets, and pops even
+  stale payloads to keep the queues aligned. Never drain payloads independently.
+  Queue storage is reused by pop; no edit slots or completion queue are needed.
 - Commit the UI storage update only after successful batch submission. Report
   failure with a retry message. Clipboard and selection survive failed paste.
 - Audio batch application must be bounded and allocation-free. For current small
@@ -151,7 +155,7 @@ pattern switches and remains reusable after paste.
   clear affects only its extents and preserves note/velocity/length metadata.
 - Uppercase C enters copy mode; uppercase V pastes. Lowercase c clears a
   multi-cell selection or the current row when selection is a single cell.
-- Queue/slot exhaustion cannot partially update UI or audio patterns for paste,
+- Either queue being full cannot partially update UI or audio patterns for paste,
   selection toggle or selection clear.
 - Paste following pending activation affects the intended ID/generation only.
 - Exercise shifted arrows and status prompts in the actual target terminal,

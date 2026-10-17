@@ -20,8 +20,9 @@ int main() {
                     const bork::pattern_switched ack{command._generation, command._pattern_id, current_slot};
                     current_slot = command._slot;
                     exchange.completed.try_push(ack);
-                } else if (command._type == bork::sequencer_command::type::replace_pattern) {
-                    exchange.edits_completed.try_push(command._slot);
+                } else if (command._type == bork::sequencer_command::type::update_pattern) {
+                    // Like audio, consume exactly one payload per command marker.
+                    if (exchange.edits.front()) exchange.edits.pop();
                 }
                 commands.pop();
             }

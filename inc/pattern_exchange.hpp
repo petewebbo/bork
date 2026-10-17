@@ -1,6 +1,7 @@
 #pragma once
 
 #include "pattern.hpp"
+#include "pattern_edit.hpp"
 #include <rigtorp/SPSCQueue.h>
 #include <array>
 #include <cstdint>
@@ -8,7 +9,6 @@
 namespace bork {
 inline constexpr size_t NUM_STORED_PATTERNS = 8;
 using pattern_storage = std::array<pattern, NUM_STORED_PATTERNS>;
-inline constexpr size_t NUM_EDIT_SLOTS = 4;
 
 struct pattern_switched {
     uint64_t generation{};
@@ -22,9 +22,8 @@ struct pattern_exchange {
     std::array<pattern, 2> slots{};
     rigtorp::SPSCQueue<pattern_switched> completed{1};
 
-    // Independent UI->audio transfer pool for atomic pattern edits. UI owns a
-    // free slot, publishes it once, then waits for its completion before reuse.
-    std::array<pattern, NUM_EDIT_SLOTS> edits{};
-    rigtorp::SPSCQueue<uint8_t> edits_completed{NUM_EDIT_SLOTS};
+    // Payloads are consumed only by matching update_pattern command markers.
+    // Queue pop handles storage reuse; there is no edit completion channel.
+    pattern_edit_queue edits{PATTERN_EDIT_QUEUE_CAPACITY};
 };
 } // namespace bork

@@ -84,11 +84,6 @@ public:
         return true;
     }
     void poll_notifications() {
-        for (size_t i = 0, count = exchange_.edits_completed.size(); i < count; ++i) {
-            const uint8_t slot = *exchange_.edits_completed.front();
-            edit_free_[slot] = true;
-            exchange_.edits_completed.pop();
-        }
         if (const auto* ack = exchange_.completed.front()) {
             // One outstanding activation; this ack returns its retired slot.
             if (switch_pending_ && ack->generation == generation_ &&
@@ -217,19 +212,10 @@ public:
     const char* message_{};
 private:
     bool submit_edit(const pattern& edited) {
-        poll_notifications();
-        size_t slot = 0;
-        while (slot < NUM_EDIT_SLOTS && !edit_free_[slot]) ++slot;
-        if (slot == NUM_EDIT_SLOTS) { message_ = "Edit transfers busy - try again"; return false; }
-        exchange_.edits[slot] = edited;
-        const sequencer_command command{
-            ._type = sequencer_command::type::replace_pattern,
-            ._generation = generation_,
-            ._pattern_id = static_cast<uint8_t>(selected_pattern_),
-            ._slot = static_cast<uint8_t>(slot),
-        };
-        if (!enqueue(command)) return false;
-        edit_free_[slot] = false;
+        const pattern_edit edit{generation_, static_cast<uint8_t>(selected_pattern_), edited};
+        queue_full_ = !try_submit_pattern_edit(commands_, exchange_.edits, edit);
+        message_ = queue_full_ ? "Edit queue full - edit not applied; try again" : nullptr;
+        if (queue_full_) return false;
         storage_[selected_pattern_] = edited;
         refresh_grid();
         return true;
@@ -256,11 +242,6 @@ private:
     pattern clipboard_{};
     size_t clipboard_rows_{}, clipboard_cols_{};
     std::array<char, 96> feedback_{};
-    std::array<bool, NUM_EDIT_SLOTS> edit_free_ = [] {
-        std::array<bool, NUM_EDIT_SLOTS> free{};
-        free.fill(true);
-        return free;
-    }();
 };
 
 void run_grid_tui(GridWidget& widget, const sequencer_status& status);

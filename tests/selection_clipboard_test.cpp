@@ -124,13 +124,13 @@ int main() {
     {
         fixture f;
         f.ui.copy_pattern();
-        for (size_t i = 0; i < bork::NUM_EDIT_SLOTS; ++i) assert(f.ui.paste());
+        for (size_t i = 0; i < bork::PATTERN_EDIT_QUEUE_CAPACITY; ++i) assert(f.ui.paste());
         f.ui.move_cursor(1, 1, true);
-        assert(!f.ui.toggle_selection()); // Transfer pool full: no partial changes.
+        assert(!f.ui.toggle_selection()); // Payload queue full: no partial changes.
         assert(!f.ui.clear_selection());
         assert(f.storage[0]._tracks[0]._steps[0]._note == 0);
-        f.flush();
-        assert(f.ui.toggle_selection()); // Slots returned; retry succeeds.
+        f.audio.process_commands(f.commands); // No completion polling needed for reuse.
+        assert(f.ui.toggle_selection());
         f.flush();
         bork::command_queue full(1);
         bork::pattern_exchange exchange;
@@ -139,7 +139,9 @@ int main() {
         assert(full.try_push({._type = bork::sequencer_command::type::toggle_play}));
         assert(!blocked.paste());
         assert(blocked.note_number(0, 0) == 60);
+        assert(full.front());
         full.pop(); // Test-only consumer frees capacity.
-        assert(blocked.paste()); // Rejected submission did not leak the slot.
+        assert(exchange.edits.empty()); // Rejected submission published no payload.
+        assert(blocked.paste());
     }
 }

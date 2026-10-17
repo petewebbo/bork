@@ -88,18 +88,24 @@ with no allocation, locking or logging. Commands are explicit `set_step`,
 exposed in the UI). Indices and tempo values are validated by the consumer.
 The queue outlives the audio client, including exception-path shutdown.
 
-Paste, multi-cell toggle and multi-cell clear use a separate four-slot transfer
-pool, not the pattern-switch spare. Each prepares a complete resulting pattern
-on the UI thread and submits one `replace_pattern` command tagged with pattern
-ID/generation. Audio copies it at callback entry and returns the slot through a
-dedicated completion queue, including for stale targets. UI storage changes only
-on successful submission; queue/pool exhaustion rejects the entire operation.
-No transfer memory is reused before acknowledgement.
+Paste, multi-cell toggle and multi-cell clear use a separate four-entry pattern
+payload SPSC queue, not the pattern-switch spare. Each payload contains the
+complete resulting pattern and its pattern ID/generation. The sole producer
+first checks both queues have space, publishes the payload, then publishes an
+`update_pattern` marker in the regular command queue. Consumer activity can only
+free space between those checks and pushes; submission must not be reentrant.
 
-The current fixed-size pattern is 1,568 bytes; at most four transfer copies can
-be outstanding. A local unoptimised build measured roughly 215 ns per copy plus
-completion publication in the informational batch test; this is not a real-time
-deadline guarantee. Revisit the representation/budget as pattern size grows.
+Audio consumes one payload only when it encounters its command marker, preserving
+ordering with activation and single-step edits. It copies matching payloads into
+the current pattern and pops every payload, including stale ones. Queue pop
+handles memory reuse: no edit-slot bookkeeping or edit-completion queue exists.
+UI storage changes only after successful submission. If either queue is full,
+the entire edit is rejected before publishing anything.
+
+Both queues allocate their storage before audio starts; push/front/pop do not
+allocate. The current fixed-size pattern is 1,568 bytes, and the payload queue
+holds four entries. Audio still performs a full-pattern copy for these edits;
+revisit its representation/budget as pattern size grows.
 
 After activation only the audio thread accesses live sequencer state. `inc/sequencer_status.hpp` publishes independent atomic runtime telemetry.
 The header shows the sequencer's actual PLAYING/STOPPED state, published by the

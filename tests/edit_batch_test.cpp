@@ -1,63 +1,82 @@
 #include <sequencer.hpp>
 #undef NDEBUG
 #include <cassert>
-#include <chrono>
-#include <cstdio>
-#include <type_traits>
 #include <thread>
 
 int main() {
-    static_assert(std::is_trivially_copyable_v<bork::pattern>);
     bork::sequencer audio;
-    bork::command_queue commands(8);
-    for (size_t i = 0; i < bork::NUM_EDIT_SLOTS; ++i) {
-        auto& edit = audio._patterns.edits[i];
-        edit._tracks[7]._steps[15] = {._note = static_cast<int>(60 + i), ._vel = 90, ._len = 12};
-        edit._tracks[7]._size = 16;
-        assert(commands.try_push({._type = bork::sequencer_command::type::replace_pattern,
-                                  ._slot = static_cast<uint8_t>(i)}));
+    bork::command_queue commands(16);
+    for (size_t i = 0; i < bork::PATTERN_EDIT_QUEUE_CAPACITY; ++i) {
+        bork::pattern_edit edit{};
+        edit.value._tracks[7]._steps[15] = {._note = static_cast<int>(60 + i), ._vel = 90, ._len = 12};
+        edit.value._tracks[7]._size = 16;
+        assert(bork::try_submit_pattern_edit(commands, audio._patterns.edits, edit));
     }
+    // Payload-full rejects without publishing an orphan command marker.
+    assert(!bork::try_submit_pattern_edit(commands, audio._patterns.edits, {}));
+    assert(commands.size() == bork::PATTERN_EDIT_QUEUE_CAPACITY);
     assert(audio.current_pattern()._tracks[7]._steps[15]._note == 0);
-    assert(audio.process_commands(commands) == bork::NUM_EDIT_SLOTS);
+    assert(audio.process_commands(commands) == bork::PATTERN_EDIT_QUEUE_CAPACITY);
     assert(audio.current_pattern()._tracks[7]._steps[15]._note == 63);
     assert(audio.current_pattern()._tracks[7]._size == 16);
-    for (size_t i = 0; i < bork::NUM_EDIT_SLOTS; ++i) {
-        assert(*audio._patterns.edits_completed.front() == i);
-        audio._patterns.edits_completed.pop();
-    }
-    // Stale targets return their slot without changing current state.
-    audio.apply_command({._type = bork::sequencer_command::type::replace_pattern,
-                         ._generation = 999, ._slot = 0});
-    assert(audio.current_pattern()._tracks[7]._steps[15]._note == 63);
-    assert(*audio._patterns.edits_completed.front() == 0);
-    audio._patterns.edits_completed.pop();
-    audio.apply_command({._type = bork::sequencer_command::type::replace_pattern, ._slot = 255});
-    assert(!audio._patterns.edits_completed.front());
+    assert(audio._patterns.edits.empty());
 
-    // Reuse a transfer slot across real producer/consumer threads only after ack.
+    // Command-full rejects without publishing an orphan payload.
+    bork::command_queue full(1);
+    assert(full.try_push({._type = bork::sequencer_command::type::toggle_play}));
+    assert(!bork::try_submit_pattern_edit(full, audio._patterns.edits, {}));
+    assert(audio._patterns.edits.empty() && full.size() == 1);
+    audio.process_commands(full);
+    assert(bork::try_submit_pattern_edit(full, audio._patterns.edits, {}));
+    audio.process_commands(full); // Space reusable immediately, no completion polling.
+    assert(audio._patterns.edits.empty());
+
+    // A stale payload is still consumed; the following valid payload stays aligned.
+    bork::pattern_edit edit{};
+    edit.generation = 999;
+    edit.value._tracks[0]._steps[0]._note = 1;
+    assert(bork::try_submit_pattern_edit(commands, audio._patterns.edits, edit));
+    edit.generation = 0;
+    edit.value._tracks[0]._steps[0]._note = 67;
+    assert(bork::try_submit_pattern_edit(commands, audio._patterns.edits, edit));
+    audio.process_commands(commands);
+    assert(audio.current_pattern()._tracks[0]._steps[0]._note == 67);
+    assert(audio._patterns.edits.empty());
+
+    // Activation, replacement and ordinary edits obey one common FIFO order.
+    assert(commands.try_push({._type = bork::sequencer_command::type::activate_pattern,
+                              ._generation = 1, ._pattern_id = 1, ._slot = 1}));
+    edit.generation = 1;
+    edit.pattern_id = 1;
+    edit.value._tracks[0]._steps[0]._note = 72;
+    assert(bork::try_submit_pattern_edit(commands, audio._patterns.edits, edit));
+    assert(commands.try_push({._type = bork::sequencer_command::type::set_step,
+                              ._step = 1, ._value = {._note = 80},
+                              ._generation = 1, ._pattern_id = 1}));
+    audio.process_commands(commands);
+    assert(audio.current_pattern()._tracks[0]._steps[0]._note == 72);
+    assert(audio.current_pattern()._tracks[0]._steps[1]._note == 80);
+    assert(audio._patterns.edits.empty());
+    assert(audio._patterns.completed.front());
+    audio._patterns.completed.pop();
+
+    // Actual concurrent publication, queue-full retries and repeated ring wraps.
+    constexpr int count = 10000;
     std::thread consumer([&] {
-        for (int i = 1; i <= 1000; ++i) {
-            while (audio.process_commands(commands) == 0) std::this_thread::yield();
+        for (int i = 1; i <= count; ++i) {
+            const bork::sequencer_command* command;
+            while (!(command = commands.front())) std::this_thread::yield();
+            assert(command->_type == bork::sequencer_command::type::update_pattern);
+            audio.apply_command(*command);
+            commands.pop();
             assert(audio.current_pattern()._tracks[0]._steps[0]._note == i);
         }
     });
-    for (int i = 1; i <= 1000; ++i) {
-        audio._patterns.edits[0]._tracks[0]._steps[0]._note = i;
-        assert(commands.try_push({._type = bork::sequencer_command::type::replace_pattern, ._slot = 0}));
-        while (!audio._patterns.edits_completed.front()) std::this_thread::yield();
-        audio._patterns.edits_completed.pop();
+    for (int i = 1; i <= count; ++i) {
+        edit.value._tracks[0]._steps[0]._note = i;
+        while (!bork::try_submit_pattern_edit(commands, audio._patterns.edits, edit))
+            std::this_thread::yield();
     }
     consumer.join();
-
-    // Informational timing, not a flaky deadline assertion or real-time guarantee.
-    constexpr int iterations = 10000;
-    const auto start = std::chrono::steady_clock::now();
-    for (int i = 0; i < iterations; ++i) {
-        audio.apply_command({._type = bork::sequencer_command::type::replace_pattern, ._slot = 0});
-        audio._patterns.edits_completed.pop();
-    }
-    const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
-        std::chrono::steady_clock::now() - start).count();
-    std::printf("Pattern batch: %zu bytes; copy + completion average %lld ns (local build)\n",
-                sizeof(bork::pattern), static_cast<long long>(elapsed / iterations));
+    assert(commands.empty() && audio._patterns.edits.empty());
 }
