@@ -4,6 +4,8 @@
 #include "bork_defines.hpp"
 #include "pattern.hpp"
 #include "sampler.hpp"
+#include "sequencer_command.hpp"
+#include <cmath>
 #include "transport.hpp"
 #include <array>
 #include <cstdint>
@@ -16,6 +18,35 @@ struct sequencer {
     transport _transport;
     pattern _pattern;
     std::array<sampler<float>, MAX_NUM_TRACKS> _samplers;
+
+    // Audio-thread only. No allocation, waiting, logging or unbounded draining.
+    size_t process_commands(command_queue& commands) {
+        // Only this thread consumes. Capture once so later arrivals wait until
+        // the next callback; work is bounded by the queue's fixed capacity.
+        const size_t count = commands.size();
+        for (size_t i = 0; i < count; ++i) {
+            apply_command(*commands.front());
+            commands.pop();
+        }
+        return count;
+    }
+
+    void apply_command(const sequencer_command& command) {
+        switch (command._type) {
+        case sequencer_command::type::set_step:
+            if (command._track < _pattern._tracks.size() && command._step < MAX_PATTERN_STEPS)
+                _pattern._tracks[command._track]._steps[command._step] = command._value;
+            break;
+        case sequencer_command::type::clear_track:
+            if (command._track < _pattern._tracks.size())
+                for (auto& step : _pattern._tracks[command._track]._steps) step._note = 0;
+            break;
+        case sequencer_command::type::set_tempo:
+            if (std::isfinite(command._tempo) && command._tempo >= 20 && command._tempo <= 300)
+                _transport.set_tempo(command._tempo);
+            break;
+        }
+    }
 
     void process_track(uint8_t track_idx, std::span<float> track_buffer) {
         auto num_samples = track_buffer.size();

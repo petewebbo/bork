@@ -61,12 +61,13 @@ void draw(const GridWidget& widget) {
         }
     }
     attrset(A_NORMAL);
+    if (widget.queue_full_)
+        mvaddstr(MIN_HEIGHT - 1, 2, "Edit queue full - edit not applied; try again");
     refresh();
 }
 } // namespace
 
-void run_grid_tui(pattern& pattern) {
-    GridWidget widget(pattern);
+void run_grid_tui(GridWidget& widget) {
     Terminal terminal;
     for (;;) {
         draw(widget);

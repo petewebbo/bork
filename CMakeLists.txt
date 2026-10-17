@@ -28,6 +28,7 @@ FetchContent_Declare(fmt
     GIT_SHALLOW TRUE
 )
 FetchContent_MakeAvailable(portaudio fmt)
+include(cmake/SPSCQueue.cmake)
 
 include(cmake/CPM.cmake)
 CPMAddPackage(
@@ -50,17 +51,20 @@ target_link_libraries(bork PRIVATE
     fmt::fmt
     portaudio_static
     AudioFile
+    SPSCQueue::SPSCQueue
     ${CURSES_LIBRARIES}
 )
 
 include(CTest)
 if(BUILD_TESTING)
+    find_package(Threads REQUIRED)
     add_executable(portaudio_test tests/portaudio_test.cpp)
     target_include_directories(portaudio_test PRIVATE inc)
     target_link_libraries(portaudio_test PRIVATE portaudio_static)
     add_test(NAME portaudio_wrapper COMMAND portaudio_test)
     add_executable(grid_tui_test tests/grid_tui_test.cpp)
     target_include_directories(grid_tui_test PRIVATE inc)
+    target_link_libraries(grid_tui_test PRIVATE SPSCQueue::SPSCQueue AudioFile fmt::fmt Threads::Threads)
     add_test(NAME grid_tui_model COMMAND grid_tui_test)
 endif()
 

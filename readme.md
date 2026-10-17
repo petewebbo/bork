@@ -5,7 +5,8 @@ A very incomplete tui drum machine.
 ## Build and run
 
 Requires CMake, a C/C++20 toolchain, Git and internet access on the first build.
-CMake fetches PortAudio 19.7.0, fmt and AudioFile. On Linux, install the development
+CMake fetches PortAudio 19.7.0, fmt, AudioFile and rigtorp/SPSCQueue v1.1
+(pinned to commit `565a5149d54930463d58cb0f69b978d439555e66`). On Linux, install the development
 packages for your native PortAudio backend (for example `libasound2-dev` for ALSA).
 macOS uses CoreAudio; no JACK server or JACK development package is required.
 The UI requires ncurses headers/libraries (macOS Command Line Tools, or
@@ -25,7 +26,8 @@ stream. The mono sequencer mix is sent to every output channel.
 
 The main application displays a five-track, sixteen-step ncurses grid: Kick,
 Snare, Clap, HH and Open HH. It needs a 90 × 15 terminal. The initial grid reads
-`sequencer._pattern`; edits write directly back to that same pattern.
+`sequencer._pattern` before audio starts; subsequent edits go through an SPSC
+command queue rather than accessing live sequencer state.
 
 - Click a cell or press **Space/x** to toggle it.
 - **Arrows** select a cell; **Home/End** jump to the first/last step.
@@ -36,11 +38,30 @@ Toggling off preserves velocity and length. A newly enabled step defaults to
 velocity 100 if no velocity was set. Clicks in cell gaps are ignored. Resizing
 the terminal preserves the pattern.
 
-**Prototype limitation:** UI writes and audio reads are deliberately
-unsynchronised, as requested. This is a C++ data race, not a thread-safe editing
-API; proper communication will replace it later. The UI only snapshots state
-on initialisation and tracks its own subsequent edits; it does not poll external
-pattern changes or transport/playhead state.
+## UI → audio commands
+
+The TUI is the sole producer; the PortAudio callback is the sole consumer. A
+1024-command `rigtorp::SPSCQueue` is allocated before audio starts. The UI owns a
+pattern copy, and only updates it after non-blocking `try_push` succeeds. A full
+queue rejects the edit and displays a retry message; it never silently drops an
+edit already reflected in the UI. Clear-row is one command, not sixteen edits.
+
+At the start of each audio callback, before rendering any tracks, the sequencer
+reads the queue depth once and consumes that many commands using `front`/`pop`.
+Commands arriving after that observation wait until the next callback. Work is
+bounded by the 1024-command capacity, not a smaller per-block cap; a full backlog
+can therefore take more callback time. Handlers perform bounded work
+with no allocation, locking or logging. Commands are explicit `set_step`,
+`clear_track`, and `set_tempo` values (tempo is supported by the protocol, not yet
+exposed in the UI). Indices and tempo values are validated by the consumer.
+The queue outlives the audio client, including exception-path shutdown.
+
+After activation only the audio thread accesses live sequencer state. There is
+no return channel yet: the UI does not observe external pattern changes or a
+playhead, and accepted commands may remain pending until the next callback.
+Quitting stops audio; remaining commands need not be applied. This is an
+in-process thread boundary, not an IPC transport. Adding another producer or
+consumer would violate the SPSC contract.
 
 The five sample paths in `src/main.cpp` are absolute; change them to point to
 your files. Samples are not resampled, so use samples matching the output sample

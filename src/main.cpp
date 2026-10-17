@@ -16,11 +16,14 @@ class audio_client : public ezpz_portaudio<SampleType> {
     using base = ezpz_portaudio<SampleType>;
 
 public:
-    using base::base;
+    audio_client(std::string_view name, bork::command_queue& commands)
+        : base(name), commands_(commands) {}
     ~audio_client() override { base::deactivate(); }
 
 private:
+    bork::command_queue& commands_;
     int process(unsigned long num_frames) override {
+        sequencer.process_commands(commands_);
         // PortAudio may supply variable-sized blocks. Never exceed scratch capacity.
         for (size_t offset = 0; offset < num_frames;) {
             const auto count = std::min<size_t>(main_buffer.size(), num_frames - offset);
@@ -67,15 +70,17 @@ int main() try {
     sequencer._samplers[4]._audio_file.load("/Users/petewebbo/code/bork/samples/tapetonic/Tonic_HHo_B_T1A.wav");
 
 
-    audio_client<float> audio("bork");
+    // Construct before activation: UI snapshots state while no callback can mutate it.
+    // Queue and UI outlive audio, including exception-path shutdown.
+    bork::command_queue commands(bork::COMMAND_QUEUE_CAPACITY);
+    bork::GridWidget widget(sequencer._pattern, commands);
+    audio_client<float> audio("bork", commands);
     audio.init(0, 2); // Default output device; no microphone/input required.
     sequencer._transport._sample_rate = static_cast<uint32_t>(audio.sample_rate());
     sequencer._transport.set_tempo(120.0f);
     audio.activate();
 
-    // Temporary direct access: UI writes are intentionally not synchronised
-    // with the audio callback yet.
-    bork::run_grid_tui(sequencer._pattern);
+    bork::run_grid_tui(widget);
     audio.deactivate();
     
     return 0;
