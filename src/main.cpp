@@ -70,11 +70,11 @@ int main() try {
     // }
     // sequencer._pattern._tracks[4]._steps[14] = {._note = 1, ._vel=40};
     
-    sequencer._samplers[0]._audio_file.load("/Users/petewebbo/code/bork/samples/tapetonic/Tonic_BD_E_C2S.wav");
-    sequencer._samplers[1]._audio_file.load("/Users/petewebbo/code/bork/samples/tapetonic/Tonic_SD_D_C2A.wav");
-    sequencer._samplers[2]._audio_file.load("/Users/petewebbo/code/bork/samples/tapetonic/Tonic_Clap_D_ST_T1A.wav");
-    sequencer._samplers[3]._audio_file.load("/Users/petewebbo/code/bork/samples/tapetonic/Tonic_HH_B_T1A_V1.wav");
-    sequencer._samplers[4]._audio_file.load("/Users/petewebbo/code/bork/samples/tapetonic/Tonic_HHo_B_T1A.wav");
+    static_cast<bork::sampler*>(sequencer._machines[0].get())->_audio_file.load("/Users/petewebbo/code/bork/samples/tapetonic/Tonic_BD_E_C2S.wav");
+    static_cast<bork::sampler*>(sequencer._machines[1].get())->_audio_file.load("/Users/petewebbo/code/bork/samples/tapetonic/Tonic_SD_D_C2A.wav");
+    static_cast<bork::sampler*>(sequencer._machines[2].get())->_audio_file.load("/Users/petewebbo/code/bork/samples/tapetonic/Tonic_Clap_D_ST_T1A.wav");
+    static_cast<bork::sampler*>(sequencer._machines[3].get())->_audio_file.load("/Users/petewebbo/code/bork/samples/tapetonic/Tonic_HH_B_T1A_V1.wav");
+    static_cast<bork::sampler*>(sequencer._machines[4].get())->_audio_file.load("/Users/petewebbo/code/bork/samples/tapetonic/Tonic_HHo_B_T1A.wav");
 
 
     // Storage belongs only to the UI. Audio starts with a separate copy of pattern 1.

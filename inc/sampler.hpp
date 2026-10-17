@@ -8,21 +8,25 @@
 #include <AudioFile.h>
 
 #include <pattern.hpp>
+#include <machine.hpp>
 
 namespace bork {
 
 template <typename T> using buffer = std::vector<std::vector<T>>;
 
-template <typename T> struct sampler {
+struct sampler : public machine {
 
-    sampler() :
-        _samples(_audio_file.samples) {
+    using T = float;
+
+    sampler()
+    : machine(machine::MachineType::Sampler)
+    , _samples(_audio_file.samples) {
         _audio_file.setNumChannels(1);
         _audio_file.setNumSamplesPerChannel(1);
         _samples[0][0] = 1;
     }
 
-    void trigger(step& trig) {
+    void trigger(const step& trig) noexcept final{
         if (trig._note) {
             _play_counter = 0;
             _playing = true;
@@ -30,7 +34,7 @@ template <typename T> struct sampler {
         }
     }
 
-    void process_chunk(std::span<T> buffer) {
+    void process_chunk(std::span<T> buffer) noexcept final {
 
         if (!_playing) {
             return;

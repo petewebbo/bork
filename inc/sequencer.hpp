@@ -23,7 +23,13 @@ struct sequencer {
     uint64_t _generation{};
     pattern& current_pattern() { return _patterns.slots[_current_slot]; }
     const pattern& current_pattern() const { return _patterns.slots[_current_slot]; }
-    std::array<sampler<float>, MAX_NUM_TRACKS> _samplers;
+    std::array<std::unique_ptr<machine>, MAX_NUM_TRACKS> _machines;
+
+    sequencer() {
+        for (auto& m : _machines) {
+            m = std::make_unique<sampler>();
+        }
+    }
 
     // Audio-thread only. No allocation, waiting, logging or unbounded draining.
     size_t process_commands(command_queue& commands) {
@@ -99,7 +105,7 @@ struct sequencer {
             auto samples_to_process = last_sample - samples_processed;
 
             if (samples_to_process > 0) {
-                _samplers[track_idx].process_chunk(
+                _machines[track_idx]->process_chunk(
                     track_buffer.subspan(samples_processed, samples_to_process));
                 samples_processed += samples_to_process;
             }
@@ -109,7 +115,7 @@ struct sequencer {
             if (samples_processed == next_event_sample) {
                 auto& step = current_pattern()._tracks[track_idx]._steps[next_step];
                 if (step._note) {
-                    _samplers[track_idx].trigger(step);
+                    _machines[track_idx]->trigger(step);
                 }
             }
         }

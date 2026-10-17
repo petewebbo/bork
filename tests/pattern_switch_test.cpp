@@ -14,8 +14,9 @@ int main() {
     bork::command_queue commands(16);
     bork::GridWidget ui(storage, commands, audio._patterns);
     audio._transport._track_transport[0]._next_step = 9;
-    audio._samplers[0]._playing = true;
-    audio._samplers[0]._play_counter = 3;
+    auto& sampler = static_cast<bork::sampler&>(*audio._machines[0].get());
+    sampler._playing = true;
+    sampler._play_counter = 3;
 
     assert(ui.select_pattern(0)); // Same selection is a no-op.
     assert(commands.empty());
@@ -41,7 +42,7 @@ int main() {
     assert(!audio._is_playing); // Switching works while stopped.
     assert(audio.current_pattern()._tracks[0]._steps[0]._note == 0);
     assert(audio._transport._track_transport[0]._next_step == 9);
-    assert(audio._samplers[0]._playing && audio._samplers[0]._play_counter == 3);
+    assert(sampler._playing && sampler._play_counter == 3);
     assert(ui.switch_pending_); // No UI state changes until it polls completion.
     ui.poll_notifications();
     assert(!ui.switch_pending_ && ui.playing_pattern_ == 1);
