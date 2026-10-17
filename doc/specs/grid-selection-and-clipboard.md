@@ -1,6 +1,6 @@
 # Grid selection and clipboard
 
-Status: agreed specification; implementation has not started.
+Status: implemented.
 Uppercase `C` enters copy mode, uppercase `V` pastes, and lowercase `c`
 clears the selection, or the current row when no multi-cell selection exists.
 
@@ -112,8 +112,8 @@ pattern switches and remains reusable after paste.
   before its subsequent edits.
 - Apply a paste coherently at a callback boundary: do not let a large paste be
   partly applied in different callbacks or partly committed on queue-full.
-- Before implementation, add a bounded paste-batch handoff rather than naively
-  enqueueing many individual step commands. Prepare the batch on the UI thread,
+- Use a bounded paste-batch handoff rather than naively enqueueing many
+  individual step commands. Prepare the batch on the UI thread,
   publish one command, and return ownership through a completion path. Queue or
   transfer-slot exhaustion rejects the whole paste and leaves storage unchanged.
 - Commit the UI storage update only after successful batch submission. Report

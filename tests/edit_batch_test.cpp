@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstdio>
 #include <type_traits>
+#include <thread>
 
 int main() {
     static_assert(std::is_trivially_copyable_v<bork::pattern>);
@@ -32,6 +33,21 @@ int main() {
     audio._patterns.edits_completed.pop();
     audio.apply_command({._type = bork::sequencer_command::type::replace_pattern, ._slot = 255});
     assert(!audio._patterns.edits_completed.front());
+
+    // Reuse a transfer slot across real producer/consumer threads only after ack.
+    std::thread consumer([&] {
+        for (int i = 1; i <= 1000; ++i) {
+            while (audio.process_commands(commands) == 0) std::this_thread::yield();
+            assert(audio.current_pattern()._tracks[0]._steps[0]._note == i);
+        }
+    });
+    for (int i = 1; i <= 1000; ++i) {
+        audio._patterns.edits[0]._tracks[0]._steps[0]._note = i;
+        assert(commands.try_push({._type = bork::sequencer_command::type::replace_pattern, ._slot = 0}));
+        while (!audio._patterns.edits_completed.front()) std::this_thread::yield();
+        audio._patterns.edits_completed.pop();
+    }
+    consumer.join();
 
     // Informational timing, not a flaky deadline assertion or real-time guarantee.
     constexpr int iterations = 10000;

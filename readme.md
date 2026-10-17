@@ -30,18 +30,35 @@ an eight-pattern UI-owned storage bank, initialised before audio starts. Pattern
 contains the startup pattern; patterns 2–8 start empty. Edits go through an SPSC
 command queue rather than accessing live audio state.
 
-- Click a cell or press **x** to toggle it.
+- Click a cell to select/toggle it; **x** toggles every selected cell independently.
 - **Space** toggles sequencer playback through the command queue.
-- **Arrows** select a cell; **Home/End** jump to the first/last step.
-- **C** clears the selected row.
+- **Arrows** move; **Shift+arrows** extend a rectangular selection. Normal
+  movement/click collapses it. **Home/End** jump to the first/last step.
+- **c** clears the selection, or the current row when only one cell is selected.
+- **C**, then **p/s** copies the whole pattern/selection; **Escape** cancels.
+- **V** pastes. A selection paste starts at the cursor and clips at the visible
+  grid edges. A pattern paste replaces the entire displayed pattern, including
+  hidden tracks and metadata, independent of cursor position.
 - **P**, then **1–8** selects a pattern. The permanent top status bar prompts
   for the number; **Escape** cancels. Other keys do not edit or control playback
   while waiting for a number. The bar also shows errors/pending feedback and
   remains visible when empty.
 - **q/Q/Escape** quits and stops audio.
 
-An active cell under the cursor has a dark-grey background (with a basic-colour
-or monochrome fallback on limited terminals).
+An active cell under the cursor has a dark-grey background. Multi-cell selection
+uses a light-grey background with an underlined cursor (with basic-colour or
+monochrome fallbacks). Selection is anchor-to-cursor, inclusive, and persists
+until normal movement, clicking or a pattern change.
+
+Shift-arrows support standard xterm `CSI 1;2 A/B/C/D` sequences and native ncurses
+shifted-arrow codes. A terminal must actually send shifted keys distinctly;
+terminals configured to intercept these shortcuts may need configuration.
+The standalone preview was exercised under a pseudo-terminal using xterm input.
+
+The clipboard is internal to Bork and survives pattern changes. It owns snapshots
+of all step fields, including empty cells; overlap and repeated pastes are safe.
+Copy prompts use the top status bar and block normal controls until completed
+or cancelled. Copy/selection movement never sends audio commands.
 
 Active cells display MIDI note names using `inc/midi_notes.hpp` (128-entry
 lookup table with note numbers, sharp-spelled names and equal-tempered frequencies;
@@ -70,6 +87,19 @@ with no allocation, locking or logging. Commands are explicit `set_step`,
 `clear_track`, and `set_tempo` values (tempo is supported by the protocol, not yet
 exposed in the UI). Indices and tempo values are validated by the consumer.
 The queue outlives the audio client, including exception-path shutdown.
+
+Paste, multi-cell toggle and multi-cell clear use a separate four-slot transfer
+pool, not the pattern-switch spare. Each prepares a complete resulting pattern
+on the UI thread and submits one `replace_pattern` command tagged with pattern
+ID/generation. Audio copies it at callback entry and returns the slot through a
+dedicated completion queue, including for stale targets. UI storage changes only
+on successful submission; queue/pool exhaustion rejects the entire operation.
+No transfer memory is reused before acknowledgement.
+
+The current fixed-size pattern is 1,568 bytes; at most four transfer copies can
+be outstanding. A local unoptimised build measured roughly 215 ns per copy plus
+completion publication in the informational batch test; this is not a real-time
+deadline guarantee. Revisit the representation/budget as pattern size grows.
 
 After activation only the audio thread accesses live sequencer state. `inc/sequencer_status.hpp` publishes independent atomic runtime telemetry.
 The header shows the sequencer's actual PLAYING/STOPPED state, published by the
