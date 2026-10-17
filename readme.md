@@ -29,12 +29,19 @@ Snare, Clap, HH and Open HH. It needs a 90 × 15 terminal. The initial grid read
 `sequencer._pattern` before audio starts; subsequent edits go through an SPSC
 command queue rather than accessing live sequencer state.
 
-- Click a cell or press **Space/x** to toggle it.
+- Click a cell or press **x** to toggle it.
+- **Space** toggles sequencer playback through the command queue.
 - **Arrows** select a cell; **Home/End** jump to the first/last step.
 - **C** clears the selected row.
 - **q/Q/Escape** quits and stops audio.
 
-Toggling off preserves velocity and length. A newly enabled step defaults to
+Active cells display MIDI note names using `inc/midi_notes.hpp` (128-entry
+lookup table with note numbers, sharp-spelled names and equal-tempered frequencies;
+A4 = 440 Hz, MIDI 60 = C4). The current demo's `_note = 1` steps display `C#-1`.
+The sequencer still uses note zero to mean inactive, so MIDI 0 cannot currently
+be played; the lookup table nevertheless includes it. Invalid notes display `????`.
+
+Toggling off preserves the note for re-enabling, as well as velocity and length. A newly enabled step defaults to
 velocity 100 if no velocity was set. Clicks in cell gaps are ignored. Resizing
 the terminal preserves the pattern.
 
@@ -56,9 +63,13 @@ with no allocation, locking or logging. Commands are explicit `set_step`,
 exposed in the UI). Indices and tempo values are validated by the consumer.
 The queue outlives the audio client, including exception-path shutdown.
 
-After activation only the audio thread accesses live sequencer state. There is
-no return channel yet: the UI does not observe external pattern changes or a
-playhead, and accepted commands may remain pending until the next callback.
+After activation only the audio thread accesses live sequencer state. `inc/sequencer_status.hpp` publishes independent atomic runtime telemetry.
+The header shows the sequencer's actual PLAYING/STOPPED state, published by the
+audio callback after processing commands. The lifecycle owner clears it after
+shutdown; the standalone preview stays stopped.
+The UI refreshes status every 50 ms without reading live engine fields. There is
+no pattern/playhead return channel yet; accepted commands may remain pending
+until the next callback.
 Quitting stops audio; remaining commands need not be applied. This is an
 in-process thread boundary, not an IPC transport. Adding another producer or
 consumer would violate the SPSC contract.

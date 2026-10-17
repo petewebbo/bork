@@ -16,12 +16,18 @@ class audio_client : public ezpz_portaudio<SampleType> {
     using base = ezpz_portaudio<SampleType>;
 
 public:
-    audio_client(std::string_view name, bork::command_queue& commands)
-        : base(name), commands_(commands) {}
-    ~audio_client() override { base::deactivate(); }
+    audio_client(std::string_view name, bork::command_queue& commands,
+                 bork::sequencer_status& status)
+        : base(name), commands_(commands), status_(status) {}
+    ~audio_client() override { deactivate(); }
+    void deactivate() noexcept {
+        base::deactivate(); // Wait for callbacks before clearing published state.
+        status_.playing.store(false, std::memory_order_relaxed);
+    }
 
 private:
     bork::command_queue& commands_;
+    bork::sequencer_status& status_;
     int process(unsigned long num_frames) override {
         sequencer.process_commands(commands_);
         // PortAudio may supply variable-sized blocks. Never exceed scratch capacity.
@@ -38,6 +44,7 @@ private:
                 std::copy_n(main_buffer.data(), count, output + offset);
             offset += count;
         }
+        status_.playing.store(sequencer._is_playing, std::memory_order_relaxed);
         return paContinue;
     }
 };
@@ -47,21 +54,21 @@ int main() try {
     fmt::print("welcome to {}!\n", "bork");
     fmt::print("max trax = {}\n", sequencer._transport._track_transport.size());
 
-    // make a simple pattern
-    for (int i=0; i<16; i=i+16) {
-        sequencer._pattern._tracks[0]._steps[i+0] = {._note = 1, ._vel=127};
-        sequencer._pattern._tracks[0]._steps[i+3] = {._note = 1, ._vel=127};
-        sequencer._pattern._tracks[0]._steps[i+6] = {._note = 1, ._vel=127};
-        sequencer._pattern._tracks[0]._steps[i+8] = {._note = 1, ._vel=127};
-    }
-    for (int i=4; i<16; i=i+8) {
-        sequencer._pattern._tracks[1]._steps[i+0] = {._note = 1, ._vel=90};
-    }
-    for (int i=0; i<16; i=i+2) {
-        sequencer._pattern._tracks[3]._steps[i+0] = {._note = 1, ._vel=80};
-        sequencer._pattern._tracks[3]._steps[i+1] = {._note = 1, ._vel=40};
-    }
-    sequencer._pattern._tracks[4]._steps[14] = {._note = 1, ._vel=40};
+    // // make a simple pattern
+    // for (int i=0; i<16; i=i+16) {
+    //     sequencer._pattern._tracks[0]._steps[i+0] = {._note = 1, ._vel=127};
+    //     sequencer._pattern._tracks[0]._steps[i+3] = {._note = 1, ._vel=127};
+    //     sequencer._pattern._tracks[0]._steps[i+6] = {._note = 1, ._vel=127};
+    //     sequencer._pattern._tracks[0]._steps[i+8] = {._note = 1, ._vel=127};
+    // }
+    // for (int i=4; i<16; i=i+8) {
+    //     sequencer._pattern._tracks[1]._steps[i+0] = {._note = 1, ._vel=90};
+    // }
+    // for (int i=0; i<16; i=i+2) {
+    //     sequencer._pattern._tracks[3]._steps[i+0] = {._note = 1, ._vel=80};
+    //     sequencer._pattern._tracks[3]._steps[i+1] = {._note = 1, ._vel=40};
+    // }
+    // sequencer._pattern._tracks[4]._steps[14] = {._note = 1, ._vel=40};
     
     sequencer._samplers[0]._audio_file.load("/Users/petewebbo/code/bork/samples/tapetonic/Tonic_BD_E_C2S.wav");
     sequencer._samplers[1]._audio_file.load("/Users/petewebbo/code/bork/samples/tapetonic/Tonic_SD_D_C2A.wav");
@@ -74,13 +81,14 @@ int main() try {
     // Queue and UI outlive audio, including exception-path shutdown.
     bork::command_queue commands(bork::COMMAND_QUEUE_CAPACITY);
     bork::GridWidget widget(sequencer._pattern, commands);
-    audio_client<float> audio("bork", commands);
+    bork::sequencer_status status;
+    audio_client<float> audio("bork", commands, status);
     audio.init(0, 2); // Default output device; no microphone/input required.
     sequencer._transport._sample_rate = static_cast<uint32_t>(audio.sample_rate());
     sequencer._transport.set_tempo(120.0f);
     audio.activate();
 
-    bork::run_grid_tui(widget);
+    bork::run_grid_tui(widget, status);
     audio.deactivate();
     
     return 0;

@@ -1,4 +1,5 @@
 #include "grid_tui.hpp"
+#include "midi_notes.hpp"
 #include <curses.h>
 // ncurses also defines COLS; keep the grid's existing constant unambiguous.
 #undef COLS
@@ -19,6 +20,7 @@ struct Terminal {
         cbreak();
         noecho();
         keypad(stdscr, TRUE);
+        timeout(50); // Refresh telemetry even when no keys arrive.
         curs_set(0);
         mousemask(ALL_MOUSE_EVENTS, nullptr);
         mouseinterval(200);
@@ -31,7 +33,7 @@ struct Terminal {
     ~Terminal() { endwin(); }
 };
 bool fits() { return getmaxx(stdscr) >= MIN_WIDTH && getmaxy(stdscr) >= MIN_HEIGHT; }
-void draw(const GridWidget& widget) {
+void draw(const GridWidget& widget, const sequencer_status& status) {
     erase();
     if (!fits()) {
         const char* prompt = "Resize terminal (90 x 15) | q quits";
@@ -41,7 +43,8 @@ void draw(const GridWidget& widget) {
         return;
     }
     attrset(A_BOLD);
-    mvaddstr(1, 2, "BORK - PATTERN 01");
+    mvprintw(1, 2, "BORK - PATTERN 01 | %s",
+             status.playing.load(std::memory_order_relaxed) ? "PLAYING" : "STOPPED");
     attrset(A_NORMAL);
     mvaddstr(2, 2, "Click / Space / x: toggle | Arrows: move | C: clear row | q: quit");
     for (size_t col = 0; col < GridWidget::COLS; ++col)
@@ -57,7 +60,13 @@ void draw(const GridWidget& widget) {
             if (active && has_colors()) style |= COLOR_PAIR(row + 1);
             if (selected) style |= A_REVERSE;
             attrset(style);
-            mvaddstr(y, LEFT + col * PITCH, active ? " ON " : "  · ");
+            const int x = LEFT + col * PITCH;
+            if (active) {
+                const auto* note = lookup_midi_note(widget.note_number(row, col));
+                mvprintw(y, x, "%-4s", note ? note->name.data() : "????");
+            } else {
+                mvaddstr(y, x, " ·· ");
+            }
         }
     }
     attrset(A_NORMAL);
@@ -67,12 +76,13 @@ void draw(const GridWidget& widget) {
 }
 } // namespace
 
-void run_grid_tui(GridWidget& widget) {
+void run_grid_tui(GridWidget& widget, const sequencer_status& status) {
     Terminal terminal;
     for (;;) {
-        draw(widget);
+        draw(widget, status);
         const int key = getch();
-        if (key == 'q' || key == 'Q' || key == 27 || key == ERR) return;
+        if (key == ERR) continue;
+        if (key == 'q' || key == 'Q' || key == 27) return;
         if (!fits()) continue;
         switch (key) {
         case KEY_UP: if (widget.current_row_ > 0) --widget.current_row_; break;
@@ -81,7 +91,8 @@ void run_grid_tui(GridWidget& widget) {
         case KEY_RIGHT: if (widget.current_col_ + 1 < GridWidget::COLS) ++widget.current_col_; break;
         case KEY_HOME: widget.current_col_ = 0; break;
         case KEY_END: widget.current_col_ = GridWidget::COLS - 1; break;
-        case ' ': case 'x': widget.togglecell(); break;
+        case 'x': widget.togglecell(); break;
+        case ' ': widget.toggleplay(); break;
         case 'C': widget.clearrow(); break;
         case KEY_MOUSE: {
             MEVENT event{};

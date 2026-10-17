@@ -7,6 +7,7 @@ int main() {
     bork::pattern pattern{};
     bork::command_queue commands(bork::COMMAND_QUEUE_CAPACITY);
     bork::GridWidget widget(pattern, commands);
+    bork::sequencer_status status; // Preview has no audio: always stopped.
     std::atomic<bool> stop{false};
     std::thread consumer([&] {
         while (!stop.load()) {
@@ -16,7 +17,7 @@ int main() {
         }
     });
     try {
-        bork::run_grid_tui(widget);
+        bork::run_grid_tui(widget, status);
     } catch (...) {
         stop.store(true);
         consumer.join();

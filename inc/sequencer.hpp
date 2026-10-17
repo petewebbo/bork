@@ -14,7 +14,7 @@
 namespace bork {
 
 struct sequencer {
-
+    bool _is_playing = false;
     transport _transport;
     pattern _pattern;
     std::array<sampler<float>, MAX_NUM_TRACKS> _samplers;
@@ -45,10 +45,16 @@ struct sequencer {
             if (std::isfinite(command._tempo) && command._tempo >= 20 && command._tempo <= 300)
                 _transport.set_tempo(command._tempo);
             break;
+        case sequencer_command::type::toggle_play:
+            _is_playing = !_is_playing;
+            break;
         }
     }
 
     void process_track(uint8_t track_idx, std::span<float> track_buffer) {
+        if (!_is_playing) {
+            return;
+        }
         auto num_samples = track_buffer.size();
         _transport._track_transport[track_idx].block_update(num_samples);
 

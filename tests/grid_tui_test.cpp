@@ -1,4 +1,6 @@
 #include <grid_tui.hpp>
+#include <midi_notes.hpp>
+#include <string_view>
 #include <sequencer.hpp>
 #undef NDEBUG
 #include <cassert>
@@ -6,12 +8,50 @@
 #include <thread>
 
 int main() {
+    bork::sequencer_status status;
+    const auto& published = status;
+    assert(!published.playing.load(std::memory_order_relaxed));
+    std::thread publisher([&] { status.playing.store(true, std::memory_order_relaxed); });
+    publisher.join();
+    assert(published.playing.load(std::memory_order_relaxed));
+    status.playing.store(false, std::memory_order_relaxed);
+    assert(!published.playing.load(std::memory_order_relaxed));
+    assert(std::string_view(bork::lookup_midi_note(0)->name.data()) == "C-1");
+    assert(std::string_view(bork::lookup_midi_note(60)->name.data()) == "C4");
+    assert(std::string_view(bork::lookup_midi_note(61)->name.data()) == "C#4");
+    assert(std::string_view(bork::lookup_midi_note(127)->name.data()) == "G9");
+    assert(std::abs(bork::lookup_midi_note(69)->frequency - 440.0) < 0.000001);
+    assert(!bork::lookup_midi_note(-1) && !bork::lookup_midi_note(128));
+    {
+        bork::sequencer pitched{};
+        pitched._pattern._tracks[0]._steps[0] = {._note = 61, ._vel = 90};
+        bork::command_queue queue(8);
+        bork::GridWidget ui(pitched._pattern, queue);
+        assert(ui.note_number(0, 0) == 61);
+        assert(ui.togglecell());
+        assert(ui.note_number(0, 0) == 0);
+        assert(ui.togglecell());
+        assert(ui.note_number(0, 0) == 61);
+        pitched.process_commands(queue);
+        assert(pitched._pattern._tracks[0]._steps[0]._note == 61);
+        assert(ui.clearrow());
+        assert(ui.togglecell());
+        pitched.process_commands(queue);
+        assert(pitched._pattern._tracks[0]._steps[0]._note == 61);
+    }
     bork::sequencer engine{};
     auto& pattern = engine._pattern;
     pattern._tracks[0]._steps[3] = {._note = 1, ._vel = 80, ._len = 12};
     pattern._tracks[4]._steps[14] = {._note = 1, ._vel = 40};
     bork::command_queue commands(bork::COMMAND_QUEUE_CAPACITY);
     bork::GridWidget widget(pattern, commands);
+    assert(!engine._is_playing);
+    assert(widget.toggleplay());
+    assert(engine.process_commands(commands) == 1);
+    assert(engine._is_playing);
+    assert(widget.toggleplay());
+    assert(engine.process_commands(commands) == 1);
+    assert(!engine._is_playing);
     assert(widget.grid_state_[0][3]);
     assert(widget.grid_state_[4][14]);
     assert(!widget.grid_state_[2][0]);
@@ -33,7 +73,7 @@ int main() {
     assert(widget.clearrow());
     assert(widget.togglecell());
     assert(engine.process_commands(commands) == 3); // FIFO: enable, clear, enable
-    assert(pattern._tracks[2]._steps[0]._note == 1);
+    assert(pattern._tracks[2]._steps[0]._note == bork::GridWidget::kDefaultNoteNumber);
     assert(pattern._tracks[2]._steps[0]._vel == 100);
     assert(widget.clearrow());
     assert(engine.process_commands(commands) == 1);
