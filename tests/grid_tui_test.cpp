@@ -46,7 +46,9 @@ int main() {
         auto& pitched_pattern = pitched.current_pattern();
         pitched_pattern._tracks[0]._steps[0] = {._note = 61, ._vel = 90};
         bork::command_queue queue(8);
-        bork::GridWidget ui(pitched_pattern, queue);
+        bork::pattern_storage stored{};
+        stored[0] = pitched_pattern;
+        bork::GridWidget ui(stored, queue, pitched._patterns);
         assert(ui.note_number(0, 0) == 61);
         assert(ui.togglecell());
         assert(ui.note_number(0, 0) == 0);
@@ -64,7 +66,9 @@ int main() {
     pattern._tracks[0]._steps[3] = {._note = 1, ._vel = 80, ._len = 12};
     pattern._tracks[4]._steps[14] = {._note = 1, ._vel = 40};
     bork::command_queue commands(bork::COMMAND_QUEUE_CAPACITY);
-    bork::GridWidget widget(pattern, commands);
+    bork::pattern_storage storage{};
+    storage[0] = pattern;
+    bork::GridWidget widget(storage, commands, engine._patterns);
     assert(!engine._is_playing);
     assert(widget.toggleplay());
     assert(engine.process_commands(commands) == 1);
@@ -103,7 +107,10 @@ int main() {
 
     // Full queue rejects both cell and whole-row edits without changing the UI.
     bork::command_queue tiny(1);
-    bork::GridWidget full_widget(pattern, tiny);
+    bork::pattern_storage full_storage{};
+    full_storage[0] = pattern;
+    bork::pattern_exchange full_exchange;
+    bork::GridWidget full_widget(full_storage, tiny, full_exchange);
     assert(full_widget.togglecell());
     assert(!full_widget.togglecell());
     assert(full_widget.queue_full_ && full_widget.grid_state_[0][0]);
