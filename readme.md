@@ -113,8 +113,19 @@ After activation only the audio thread accesses live sequencer state. `inc/seque
 The header shows the sequencer's actual PLAYING/STOPPED state, published by the
 audio callback after processing commands. The lifecycle owner clears it after
 shutdown; the standalone preview stays stopped.
-The UI refreshes status and polls switch acknowledgements every 50 ms without
-reading live engine fields. There is no playhead return channel yet.
+The UI refreshes status and polls switch acknowledgements every 30 ms without
+reading live engine fields. Each visible row shows its current step in soft red,
+including empty steps. The cursor/selection backgrounds and cursor underline
+are preserved. Stopped playback hides the playhead; resuming retains position.
+
+Audio publishes the last step reached per track once after each complete audio
+callback. Pattern ID and step share a lock-free 32-bit atomic, so the UI ignores
+positions from a different displayed pattern during a switch. Rows may advance
+independently; no coherent cross-track snapshot or status queue is required.
+Colour-limited terminals fall back to standard red, monochrome to bold/underline.
+The standalone preview has no playhead. Display timing is approximate: UI refresh
+and device output buffering add latency; audible-output compensation is not yet
+implemented.
 Quitting stops audio; remaining commands need not be applied. This is an
 in-process thread boundary, not an IPC transport. Adding another producer or
 consumer would violate the SPSC contract.

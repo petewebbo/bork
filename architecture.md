@@ -2,8 +2,8 @@
 
 This document records the intended direction, not a description of everything
 currently implemented. The current prototype uses an SPSC command queue for
-pattern edits and atomic playing-status telemetry; richer parameters, machine
-replacement and additional telemetry are future work.
+pattern edits and atomic playing/per-track playhead telemetry; richer parameters,
+machine replacement and additional telemetry are future work.
 
 ## Expected scope
 
@@ -174,6 +174,11 @@ For independent indicators such as playheads and meters, use a small status
 interface with lock-free atomics. Relaxed loads/stores are sufficient when each
 field is independent telemetry, not a publication signal for other non-atomic
 data. Verify that the chosen atomic types are lock-free on supported targets.
+
+The current status interface publishes playing state and per-track positions.
+Each position packs pattern ID and step into one lock-free 32-bit atomic and is
+published once at the end of an audio callback. The UI reads once per row per
+redraw, hides stopped/mismatched-pattern positions, and never reads live transport.
 
 The UI can hold a const reference to this status interface instead of to the
 sequencer. Fields may reflect slightly different callback updates; this is
