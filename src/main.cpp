@@ -77,10 +77,12 @@ int main() try {
     sequencer._samplers[4]._audio_file.load("/Users/petewebbo/code/bork/samples/tapetonic/Tonic_HHo_B_T1A.wav");
 
 
-    // Construct before activation: UI snapshots state while no callback can mutate it.
-    // Queue and UI outlive audio, including exception-path shutdown.
+    // Storage belongs only to the UI. Audio starts with a separate copy of pattern 1.
+    // Storage, exchange and queues all outlive callbacks, including on exceptions.
+    bork::pattern_storage storage{};
+    storage[0] = sequencer.current_pattern();
     bork::command_queue commands(bork::COMMAND_QUEUE_CAPACITY);
-    bork::GridWidget widget(sequencer._pattern, commands);
+    bork::GridWidget widget(storage, commands, sequencer._patterns);
     bork::sequencer_status status;
     audio_client<float> audio("bork", commands, status);
     audio.init(0, 2); // Default output device; no microphone/input required.

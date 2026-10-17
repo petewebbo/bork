@@ -4,15 +4,25 @@
 
 // UI-only preview: a dummy consumer discards commands instead of rendering audio.
 int main() {
-    bork::pattern pattern{};
+    bork::pattern_storage storage{};
+    bork::pattern_exchange exchange;
     bork::command_queue commands(bork::COMMAND_QUEUE_CAPACITY);
-    bork::GridWidget widget(pattern, commands);
+    bork::GridWidget widget(storage, commands, exchange);
     bork::sequencer_status status; // Preview has no audio: always stopped.
     std::atomic<bool> stop{false};
     std::thread consumer([&] {
+        uint8_t current_slot = 0;
         while (!stop.load()) {
             const auto count = commands.size();
-            for (size_t i = 0; i < count; ++i) commands.pop();
+            for (size_t i = 0; i < count; ++i) {
+                const auto& command = *commands.front();
+                if (command._type == bork::sequencer_command::type::activate_pattern) {
+                    const bork::pattern_switched ack{command._generation, command._pattern_id, current_slot};
+                    current_slot = command._slot;
+                    exchange.completed.try_push(ack);
+                }
+                commands.pop();
+            }
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
         }
     });
