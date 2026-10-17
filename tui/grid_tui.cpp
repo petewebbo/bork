@@ -11,6 +11,7 @@ namespace {
 constexpr int LEFT = 10, TOP = 5, CELL_W = 4, PITCH = 5, ROW_H = 2;
 constexpr int MIN_WIDTH = LEFT + (GridWidget::COLS - 1) * PITCH + CELL_W + 1;
 constexpr int MIN_HEIGHT = TOP + (GridWidget::ROWS - 1) * ROW_H + 2;
+constexpr short SELECTED_ACTIVE_PAIR = 6, STATUS_PAIR = 7;
 constexpr const char* names[] = {"Kick", "Snare", "Clap", "HH", "Open HH"};
 
 struct Terminal {
@@ -28,30 +29,29 @@ struct Terminal {
             start_color();
             const short colors[] = {COLOR_YELLOW, COLOR_MAGENTA, COLOR_CYAN, COLOR_BLUE, COLOR_GREEN};
             for (short row = 0; row < 5; ++row) init_pair(row + 1, COLOR_BLACK, colors[row]);
+            short dark_grey = COLORS >= 256 ? 240 : COLORS >= 16 ? 8 : COLOR_BLACK;
+            if (can_change_color() && COLORS > 16) {
+                dark_grey = 16;
+                init_color(dark_grey, 220, 220, 220);
+            }
+            init_pair(SELECTED_ACTIVE_PAIR, COLOR_WHITE, dark_grey);
+            init_pair(STATUS_PAIR, COLOR_WHITE, dark_grey);
         }
     }
     ~Terminal() { endwin(); }
 };
 bool fits() { return getmaxx(stdscr) >= MIN_WIDTH && getmaxy(stdscr) >= MIN_HEIGHT; }
-void draw_pattern_popup() {
-    constexpr int width = 30, height = 5;
-    if (getmaxx(stdscr) < width || getmaxy(stdscr) < height) return;
-    const int x = (getmaxx(stdscr) - width) / 2;
-    const int y = (getmaxy(stdscr) - height) / 2;
+void draw_status_bar(const GridWidget& widget) {
+    const int width = getmaxx(stdscr), height = getmaxy(stdscr);
+    if (width < 1 || height < 1) return;
+    attrset(has_colors() ? COLOR_PAIR(STATUS_PAIR) : A_REVERSE);
+    // Always paint the entire bottom row, including when there is no message.
+    mvhline(height - 1, 0, ' ', width);
+    const char* text = widget.awaiting_pattern_ ? "Select pattern 1-8 | Esc: cancel"
+        : widget.message_ ? widget.message_
+        : widget.switch_pending_ ? "Pattern switch pending" : "";
+    if (width > 2) mvaddnstr(height - 1, 1, text, width - 2);
     attrset(A_NORMAL);
-    for (int row = 0; row < height; ++row) mvhline(y + row, x, ' ', width);
-    mvhline(y, x + 1, ACS_HLINE, width - 2);
-    mvhline(y + height - 1, x + 1, ACS_HLINE, width - 2);
-    mvvline(y + 1, x, ACS_VLINE, height - 2);
-    mvvline(y + 1, x + width - 1, ACS_VLINE, height - 2);
-    mvaddch(y, x, ACS_ULCORNER);
-    mvaddch(y, x + width - 1, ACS_URCORNER);
-    mvaddch(y + height - 1, x, ACS_LLCORNER);
-    mvaddch(y + height - 1, x + width - 1, ACS_LRCORNER);
-    attrset(A_BOLD);
-    mvaddstr(y + 1, x + 3, "Select pattern 1-8");
-    attrset(A_NORMAL);
-    mvaddstr(y + 3, x + 3, "Esc: cancel");
 }
 void draw(const GridWidget& widget, const sequencer_status& status) {
     erase();
@@ -59,7 +59,7 @@ void draw(const GridWidget& widget, const sequencer_status& status) {
         const char* prompt = "Resize terminal (90 x 15) | q quits";
         if (getmaxy(stdscr) > 0 && getmaxx(stdscr) > 1)
             mvaddnstr(0, 0, prompt, getmaxx(stdscr) - 1);
-        if (widget.awaiting_pattern_) draw_pattern_popup();
+        draw_status_bar(widget);
         refresh();
         return;
     }
@@ -81,8 +81,12 @@ void draw(const GridWidget& widget, const sequencer_status& status) {
             const bool active = widget.grid_state_[row][col];
             const bool selected = row == widget.current_row_ && col == widget.current_col_;
             int style = active ? A_BOLD : A_DIM;
-            if (active && has_colors()) style |= COLOR_PAIR(row + 1);
-            if (selected) style |= A_REVERSE;
+            if (selected && active && has_colors())
+                style |= COLOR_PAIR(SELECTED_ACTIVE_PAIR);
+            else {
+                if (active && has_colors()) style |= COLOR_PAIR(row + 1);
+                if (selected) style |= A_REVERSE;
+            }
             attrset(style);
             const int x = LEFT + col * PITCH;
             if (active) {
@@ -94,8 +98,7 @@ void draw(const GridWidget& widget, const sequencer_status& status) {
         }
     }
     attrset(A_NORMAL);
-    if (widget.message_) mvaddstr(MIN_HEIGHT - 1, 2, widget.message_);
-    if (widget.awaiting_pattern_) draw_pattern_popup();
+    draw_status_bar(widget);
     refresh();
 }
 } // namespace

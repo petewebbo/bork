@@ -34,9 +34,14 @@ command queue rather than accessing live audio state.
 - **Space** toggles sequencer playback through the command queue.
 - **Arrows** select a cell; **Home/End** jump to the first/last step.
 - **C** clears the selected row.
-- **P**, then **1–8** selects a pattern via a small popup. **Escape** cancels
-  the popup; other keys do not edit or control playback while it is open.
+- **P**, then **1–8** selects a pattern. The permanent bottom status bar prompts
+  for the number; **Escape** cancels. Other keys do not edit or control playback
+  while waiting for a number. The bar also shows errors/pending feedback and
+  remains visible when empty.
 - **q/Q/Escape** quits and stops audio.
+
+An active cell under the cursor has a dark-grey background (with a basic-colour
+or monochrome fallback on limited terminals).
 
 Active cells display MIDI note names using `inc/midi_notes.hpp` (128-entry
 lookup table with note numbers, sharp-spelled names and equal-tempered frequencies;

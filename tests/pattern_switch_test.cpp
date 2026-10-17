@@ -32,7 +32,7 @@ int main() {
     assert(ui.note_number(0, 0) == 72);
     assert(audio.current_pattern()._tracks[0]._steps[0]._note == 60);
     assert(ui.pattern_input('p') && ui.pattern_input('3'));
-    assert(!ui.awaiting_pattern_ && ui.message_); // Reject, dismiss popup.
+    assert(!ui.awaiting_pattern_ && ui.message_); // Reject, leave number-entry mode.
     assert(ui.selected_pattern_ == 1); // Cannot overwrite submitted slot.
     assert(ui.togglecell()); // Edit new stored pattern before audio adopts it.
     assert(storage[1]._tracks[0]._steps[0]._note == 0);

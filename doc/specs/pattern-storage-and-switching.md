@@ -16,9 +16,11 @@ successful submission rather than waiting for audio acknowledgement.
 
 ## Selection and editing
 
-1. Press P, then 1–8. P opens a small 'Select pattern 1–8 / Esc: cancel' popup.
-   Number selection dismisses it; Escape cancels without quitting. Other keys
-   cannot edit/control playback while open. Poll status/acknowledgements as usual.
+1. Press P, then 1–8. The always-visible bottom status bar prompts
+   'Select pattern 1–8 / Esc: cancel'. Number selection clears the prompt;
+   Escape cancels without quitting. Other keys cannot edit/control playback
+   while awaiting a number. Poll status/acknowledgements as usual. The bar also
+   displays feedback and stays visible when empty; no popup is used.
 2. Copy storage[N] into the spare slot and enqueue activation with slot index,
    pattern ID and a new activation generation. Queue-full leaves display and
    selection unchanged and shows a retry message.
@@ -62,5 +64,6 @@ currently selected pattern is a no-op when no request is pending.
   audio current. Stale generations cannot change later activations of the same ID.
 - Queue-full does not change display/storage; pending request rejects another.
 - Repeated swaps safely recycle slots and preserve position/tails.
-- Popup handles numbers/cancellation, blocks background input, and survives resize.
+- Status-bar input handles numbers/cancellation, blocks editing while awaiting
+  a number, and survives resize. The bottom bar remains visible when empty.
 - Idle UI polls acknowledgements; shutdown with a pending request is safe.

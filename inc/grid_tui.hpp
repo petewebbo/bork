@@ -25,8 +25,8 @@ public:
                 }
         refresh_grid();
     }
-    // Return true when modal input was consumed; caller must not dispatch it
-    // to editing/playback/quit controls underneath the popup.
+    // Return true when prompted input was consumed; caller must not dispatch
+    // it to normal editing/playback/quit controls while awaiting a number.
     bool pattern_input(int key) {
         if (!awaiting_pattern_) {
             if (key != 'p' && key != 'P') return false;
