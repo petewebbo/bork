@@ -21,23 +21,24 @@ successful submission rather than waiting for audio acknowledgement.
    Escape cancels without quitting. Other keys cannot edit/control playback
    while awaiting a number. Poll status/acknowledgements as usual. The bar also
    displays feedback and stays visible when empty; no popup is used.
-2. Copy storage[N] into the spare slot and enqueue activation with slot index,
-   pattern ID and a new activation generation. Queue-full leaves display and
+2. Copy storage[N] into the spare slot and enqueue activation with slot index
+   and pattern ID. Queue-full leaves display and
    selection unchanged and shows a retry message.
 3. On enqueue success, immediately display/edit storage[N]. Show its ID and a
    separate pending/now-playing indication until audio acknowledges adoption.
 4. At callback entry audio processes its captured command batch in FIFO order,
-   adopts the pending slot by index swap, and acknowledges pattern ID,
-   generation and retired slot. No full-pattern copy occurs in audio.
+   adopts the pending slot by index swap, and acknowledges pattern ID and
+   retired slot. No full-pattern copy occurs in audio.
 5. UI consumes acknowledgement, updates now-playing indication and regains the
    retired slot as spare. It does not change its displayed selection on ack.
 
-Every step/clear-track edit carries pattern ID and activation generation. UI
-commits a storage edit only after enqueue succeeds. Audio applies it only to the
-matching current activation. Commands queued after activation target the newly
-selected pattern, including when consumed in a later callback. This identity
-also supports future routing to an audio-owned pending activation if adoption is
-later deferred; deferred scheduling is not implemented in this work.
+Every step/clear-track edit carries a pattern ID. UI commits a storage edit only
+after enqueue succeeds. Audio applies it only to the matching current pattern.
+The UI is the sole editor and submits all operations synchronously through one
+FIFO command queue, so activation precedes subsequent edits even across callback
+batches. No activation version counter is needed. If adoption is later deferred,
+pattern IDs can route edits to current/pending; deferred scheduling and
+cancellation are not implemented in this work.
 
 Only one switch may be outstanding until acknowledgement is consumed. Reject
 further requests with feedback; never overwrite a submitted slot. Selecting the
@@ -52,7 +53,7 @@ currently selected pattern is a no-op when no request is pending.
   (one). Ownership notifications must never be dropped or block the callback.
 - No synchronous inactive-stream switching path, persistence, musical-boundary
   scheduling or machine replacement is included.
-- Snapshot queue-depth processing remains unchanged. Stale-command validation,
+- Snapshot queue-depth processing remains unchanged. Pattern-target validation,
   pointer/index adoption and acknowledgement are bounded, non-allocating work.
 
 ## Acceptance
@@ -61,7 +62,7 @@ currently selected pattern is a no-op when no request is pending.
 - Display changes on successful submission, not before or on acknowledgement.
 - Audio changes only at callback entry; selection works with transport stopped.
 - Edits after submission affect selected storage/new audio activation, never old
-  audio current. Stale generations cannot change later activations of the same ID.
+  audio current. Repeated visits to the same pattern retain FIFO edit ordering.
 - Queue-full does not change display/storage; pending request rejects another.
 - Repeated swaps safely recycle slots and preserve position/tails.
 - Status-bar input handles numbers/cancellation, blocks editing while awaiting

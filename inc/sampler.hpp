@@ -20,44 +20,44 @@ struct sampler : public machine {
 
     sampler()
     : machine(machine::MachineType::Sampler)
-    , _samples(_audio_file.samples) {
-        _audio_file.setNumChannels(1);
-        _audio_file.setNumSamplesPerChannel(1);
-        _samples[0][0] = 1;
+    , samples_(audio_file_.samples) {
+        audio_file_.setNumChannels(1);
+        audio_file_.setNumSamplesPerChannel(1);
+        samples_[0][0] = 1;
     }
 
     void trigger(const step& trig) noexcept final{
-        if (trig._note) {
-            _play_counter = 0;
-            _playing = true;
-            _amp = static_cast<float>(trig._vel)/127;;
+        if (trig.note_) {
+            play_counter_ = 0;
+            playing_ = true;
+            amp_ = static_cast<float>(trig.vel_)/127;;
         }
     }
 
     void process_chunk(std::span<T> buffer) noexcept final {
 
-        if (!_playing) {
+        if (!playing_) {
             return;
         }
         
-        auto samples_to_end = _samples[0].size() - _play_counter;
+        auto samples_to_end = samples_[0].size() - play_counter_;
         auto samples_to_play = std::min(samples_to_end, buffer.size());
 
         for (size_t i=0; i<samples_to_play; ++i) {
-            buffer[i] = _samples[0][_play_counter++] * _amp;
+            buffer[i] = samples_[0][play_counter_++] * amp_;
         }
         
-        if (_play_counter >= _samples[0].size()) {
-            _playing = false;
-            _play_counter = 0;
+        if (play_counter_ >= samples_[0].size()) {
+            playing_ = false;
+            play_counter_ = 0;
         }
     }
 
-    AudioFile<T> _audio_file;
-    buffer<T>& _samples;
-    uint32_t _play_counter{};
-    bool _playing{};
-    float _amp{};
+    AudioFile<T> audio_file_;
+    buffer<T>& samples_;
+    uint32_t play_counter_{};
+    bool playing_{};
+    float amp_{};
 };
 
 } // namespace bork

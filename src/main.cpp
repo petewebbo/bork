@@ -40,11 +40,11 @@ private:
                 for (size_t i = 0; i < count; ++i)
                     main_buffer[i] += track_buffers[track][i];
             }
-            for (auto* output : base::_out_buffer_ptrs)
+            for (auto* output : base::out_buffer_ptrs_)
                 std::copy_n(main_buffer.data(), count, output + offset);
             offset += count;
         }
-        status_.playing.store(sequencer._is_playing, std::memory_order_relaxed);
+        status_.playing.store(sequencer.is_playing_, std::memory_order_relaxed);
         return paContinue;
     }
 };
@@ -52,29 +52,29 @@ private:
 
 int main() try {
     fmt::print("welcome to {}!\n", "bork");
-    fmt::print("max trax = {}\n", sequencer._transport._track_transport.size());
+    fmt::print("max trax = {}\n", sequencer.transport_.track_transport_.size());
 
     // // make a simple pattern
     // for (int i=0; i<16; i=i+16) {
-    //     sequencer._pattern._tracks[0]._steps[i+0] = {._note = 1, ._vel=127};
-    //     sequencer._pattern._tracks[0]._steps[i+3] = {._note = 1, ._vel=127};
-    //     sequencer._pattern._tracks[0]._steps[i+6] = {._note = 1, ._vel=127};
-    //     sequencer._pattern._tracks[0]._steps[i+8] = {._note = 1, ._vel=127};
+    //     sequencer.pattern_.tracks_[0].steps_[i+0] = {.note_ = 1, .vel_=127};
+    //     sequencer.pattern_.tracks_[0].steps_[i+3] = {.note_ = 1, .vel_=127};
+    //     sequencer.pattern_.tracks_[0].steps_[i+6] = {.note_ = 1, .vel_=127};
+    //     sequencer.pattern_.tracks_[0].steps_[i+8] = {.note_ = 1, .vel_=127};
     // }
     // for (int i=4; i<16; i=i+8) {
-    //     sequencer._pattern._tracks[1]._steps[i+0] = {._note = 1, ._vel=90};
+    //     sequencer.pattern_.tracks_[1].steps_[i+0] = {.note_ = 1, .vel_=90};
     // }
     // for (int i=0; i<16; i=i+2) {
-    //     sequencer._pattern._tracks[3]._steps[i+0] = {._note = 1, ._vel=80};
-    //     sequencer._pattern._tracks[3]._steps[i+1] = {._note = 1, ._vel=40};
+    //     sequencer.pattern_.tracks_[3].steps_[i+0] = {.note_ = 1, .vel_=80};
+    //     sequencer.pattern_.tracks_[3].steps_[i+1] = {.note_ = 1, .vel_=40};
     // }
-    // sequencer._pattern._tracks[4]._steps[14] = {._note = 1, ._vel=40};
+    // sequencer.pattern_.tracks_[4].steps_[14] = {.note_ = 1, .vel_=40};
     
-    static_cast<bork::sampler*>(sequencer._machines[0].get())->_audio_file.load("/Users/petewebbo/code/bork/samples/tapetonic/Tonic_BD_E_C2S.wav");
-    static_cast<bork::sampler*>(sequencer._machines[1].get())->_audio_file.load("/Users/petewebbo/code/bork/samples/tapetonic/Tonic_SD_D_C2A.wav");
-    static_cast<bork::sampler*>(sequencer._machines[2].get())->_audio_file.load("/Users/petewebbo/code/bork/samples/tapetonic/Tonic_Clap_D_ST_T1A.wav");
-    static_cast<bork::sampler*>(sequencer._machines[3].get())->_audio_file.load("/Users/petewebbo/code/bork/samples/tapetonic/Tonic_HH_B_T1A_V1.wav");
-    static_cast<bork::sampler*>(sequencer._machines[4].get())->_audio_file.load("/Users/petewebbo/code/bork/samples/tapetonic/Tonic_HHo_B_T1A.wav");
+    static_cast<bork::sampler*>(sequencer.machines_[0].get())->audio_file_.load("/Users/petewebbo/code/bork/samples/tapetonic/Tonic_BD_E_C2S.wav");
+    static_cast<bork::sampler*>(sequencer.machines_[1].get())->audio_file_.load("/Users/petewebbo/code/bork/samples/tapetonic/Tonic_SD_D_C2A.wav");
+    static_cast<bork::sampler*>(sequencer.machines_[2].get())->audio_file_.load("/Users/petewebbo/code/bork/samples/tapetonic/Tonic_Clap_D_ST_T1A.wav");
+    static_cast<bork::sampler*>(sequencer.machines_[3].get())->audio_file_.load("/Users/petewebbo/code/bork/samples/tapetonic/Tonic_HH_B_T1A_V1.wav");
+    static_cast<bork::sampler*>(sequencer.machines_[4].get())->audio_file_.load("/Users/petewebbo/code/bork/samples/tapetonic/Tonic_HHo_B_T1A.wav");
 
 
     // Storage belongs only to the UI. Audio starts with a separate copy of pattern 1.
@@ -82,12 +82,12 @@ int main() try {
     bork::pattern_storage storage{};
     storage[0] = sequencer.current_pattern();
     bork::command_queue commands(bork::COMMAND_QUEUE_CAPACITY);
-    bork::GridWidget widget(storage, commands, sequencer._patterns);
+    bork::GridWidget widget(storage, commands, sequencer.patterns_);
     bork::sequencer_status status;
     audio_client<float> audio("bork", commands, status);
     audio.init(0, 2); // Default output device; no microphone/input required.
-    sequencer._transport._sample_rate = static_cast<uint32_t>(audio.sample_rate());
-    sequencer._transport.set_tempo(120.0f);
+    sequencer.transport_.sample_rate_ = static_cast<uint32_t>(audio.sample_rate());
+    sequencer.transport_.set_tempo(120.0f);
     audio.activate();
 
     bork::run_grid_tui(widget, status);
