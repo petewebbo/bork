@@ -11,7 +11,6 @@ inline constexpr size_t NUM_STORED_PATTERNS = 8;
 using pattern_storage = std::array<pattern, NUM_STORED_PATTERNS>;
 
 struct pattern_switched {
-    uint64_t generation{};
     uint8_t pattern_id{};
     uint8_t retired_slot{};
 };

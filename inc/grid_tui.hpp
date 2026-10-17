@@ -71,12 +71,10 @@ public:
         exchange_.slots[spare_slot_] = storage_[id];
         const sequencer_command command{
             ._type = sequencer_command::type::activate_pattern,
-            ._generation = generation_ + 1,
             ._pattern_id = static_cast<uint8_t>(id),
             ._slot = spare_slot_,
         };
         if (!enqueue(command)) return false;
-        ++generation_;
         selected_pattern_ = id;
         switch_pending_ = true;
         selection_.reset();
@@ -86,8 +84,7 @@ public:
     void poll_notifications() {
         if (const auto* ack = exchange_.completed.front()) {
             // One outstanding activation; this ack returns its retired slot.
-            if (switch_pending_ && ack->generation == generation_ &&
-                ack->pattern_id == selected_pattern_) {
+            if (switch_pending_ && ack->pattern_id == selected_pattern_) {
                 spare_slot_ = ack->retired_slot;
                 playing_pattern_ = ack->pattern_id;
                 switch_pending_ = false;
@@ -110,7 +107,6 @@ public:
             ._track = static_cast<uint8_t>(current_row_),
             ._step = static_cast<uint8_t>(current_col_),
             ._value = step,
-            ._generation = generation_,
             ._pattern_id = static_cast<uint8_t>(selected_pattern_),
         };
         if (!enqueue(command)) return false;
@@ -122,7 +118,6 @@ public:
         const sequencer_command command{
             ._type = sequencer_command::type::clear_track,
             ._track = static_cast<uint8_t>(current_row_),
-            ._generation = generation_,
             ._pattern_id = static_cast<uint8_t>(selected_pattern_),
         };
         if (!enqueue(command)) return false;
@@ -212,7 +207,7 @@ public:
     const char* message_{};
 private:
     bool submit_edit(const pattern& edited) {
-        const pattern_edit edit{generation_, static_cast<uint8_t>(selected_pattern_), edited};
+        const pattern_edit edit{static_cast<uint8_t>(selected_pattern_), edited};
         queue_full_ = !try_submit_pattern_edit(commands_, exchange_.edits, edit);
         message_ = queue_full_ ? "Edit queue full - edit not applied; try again" : nullptr;
         if (queue_full_) return false;
@@ -234,7 +229,6 @@ private:
     pattern_storage& storage_;
     command_queue& commands_;
     pattern_exchange& exchange_;
-    uint64_t generation_{};
     uint8_t spare_slot_{1};
     grid_selection selection_;
     enum class clipboard_type { empty, selection, pattern };

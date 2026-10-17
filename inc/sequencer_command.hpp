@@ -15,7 +15,6 @@ struct sequencer_command {
     uint8_t _step{};
     step _value{};
     float _tempo{};
-    uint64_t _generation{};
     uint8_t _pattern_id{}; // Zero-based stored pattern index.
     uint8_t _slot{};
 };

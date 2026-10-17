@@ -17,7 +17,7 @@ int main() {
             for (size_t i = 0; i < count; ++i) {
                 const auto& command = *commands.front();
                 if (command._type == bork::sequencer_command::type::activate_pattern) {
-                    const bork::pattern_switched ack{command._generation, command._pattern_id, current_slot};
+                    const bork::pattern_switched ack{command._pattern_id, current_slot};
                     current_slot = command._slot;
                     exchange.completed.try_push(ack);
                 } else if (command._type == bork::sequencer_command::type::update_pattern) {

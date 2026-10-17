@@ -51,9 +51,23 @@ int main() {
     ui.poll_notifications();
     assert(ui.note_number(0, 0) == 60);
     assert(audio.current_pattern()._tracks[0]._steps[0]._note == 60);
-    // Same ID, older generation must not affect a later activation.
-    audio.apply_command({._type = bork::sequencer_command::type::clear_track});
+    // Edits targeting another stored pattern must not affect current.
+    audio.apply_command({._type = bork::sequencer_command::type::clear_track, ._pattern_id = 1});
     assert(audio.current_pattern()._tracks[0]._steps[0]._note == 60);
+
+    // Edits before/after activation stay ordered when revisiting the same IDs.
+    assert(ui.togglecell()); // Pattern 1 off, before switching away.
+    assert(ui.select_pattern(1));
+    assert(ui.togglecell()); // Pattern 2 back on, after its activation command.
+    assert(audio.process_commands(commands) == 3);
+    assert(audio.current_pattern()._tracks[0]._steps[0]._note == 72);
+    ui.poll_notifications();
+    assert(ui.select_pattern(0)); // Latest stored pattern 1 is empty.
+    assert(ui.note_number(0, 0) == 0);
+    assert(ui.togglecell());
+    assert(audio.process_commands(commands) == 2);
+    assert(audio.current_pattern()._tracks[0]._steps[0]._note == 60);
+    ui.poll_notifications();
 
     // Submission failure leaves displayed pattern/storage unchanged and spare reusable.
     bork::command_queue full(1);

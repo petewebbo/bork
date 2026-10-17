@@ -90,14 +90,14 @@ The queue outlives the audio client, including exception-path shutdown.
 
 Paste, multi-cell toggle and multi-cell clear use a separate four-entry pattern
 payload SPSC queue, not the pattern-switch spare. Each payload contains the
-complete resulting pattern and its pattern ID/generation. The sole producer
+complete resulting pattern and its pattern ID. The sole producer
 first checks both queues have space, publishes the payload, then publishes an
 `update_pattern` marker in the regular command queue. Consumer activity can only
 free space between those checks and pushes; submission must not be reentrant.
 
 Audio consumes one payload only when it encounters its command marker, preserving
 ordering with activation and single-step edits. It copies matching payloads into
-the current pattern and pops every payload, including stale ones. Queue pop
+the current pattern and pops every payload, including ones targeting other patterns. Queue pop
 handles memory reuse: no edit-slot bookkeeping or edit-completion queue exists.
 UI storage changes only after successful submission. If either queue is full,
 the entire edit is rejected before publishing anything.
@@ -128,9 +128,10 @@ sample tails are preserved.
 The header separates displayed PATTERN from the last acknowledged Audio pattern
 and marks a switch pending until completion. A second request is rejected until
 the UI receives acknowledgement returning the retired slot. Selecting the current
-pattern otherwise does nothing. Edit commands carry pattern ID and activation
-generation so stale edits cannot affect a later selection. Deferred switching
-is not implemented; see `doc/specs/pattern-storage-and-switching.md`.
+pattern otherwise does nothing. Edit commands carry pattern IDs. The UI is the
+sole editor and activation/edit commands share strict FIFO ordering, including
+when revisiting a pattern; no activation version counter is needed. Deferred
+switching and cancellation are not implemented; see `doc/specs/pattern-storage-and-switching.md`.
 
 The five sample paths in `src/main.cpp` are absolute; change them to point to
 your files. Samples are not resampled, so use samples matching the output sample

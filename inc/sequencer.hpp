@@ -20,7 +20,6 @@ struct sequencer {
     pattern_exchange _patterns;
     uint8_t _current_slot{};
     uint8_t _pattern_id{};
-    uint64_t _generation{};
     pattern& current_pattern() { return _patterns.slots[_current_slot]; }
     const pattern& current_pattern() const { return _patterns.slots[_current_slot]; }
     std::array<std::unique_ptr<machine>, MAX_NUM_TRACKS> _machines;
@@ -46,7 +45,7 @@ struct sequencer {
     void apply_command(const sequencer_command& command) {
         if ((command._type == sequencer_command::type::set_step ||
              command._type == sequencer_command::type::clear_track) &&
-            (command._generation != _generation || command._pattern_id != _pattern_id)) return;
+            command._pattern_id != _pattern_id) return;
         auto& pattern = current_pattern();
         switch (command._type) {
         case sequencer_command::type::set_step:
@@ -68,22 +67,21 @@ struct sequencer {
             const auto* edit = _patterns.edits.front();
             assert(edit); // Every marker must have one previously published payload.
             if (!edit) break;
-            if (edit->generation == _generation && edit->pattern_id == _pattern_id)
+            if (edit->pattern_id == _pattern_id)
                 pattern = edit->value;
-            // Stale payloads must also be popped to preserve marker alignment.
+            // Payloads for other patterns must also be popped to preserve alignment.
             _patterns.edits.pop();
             break;
         }
         case sequencer_command::type::activate_pattern: {
             if (command._slot >= _patterns.slots.size() || command._slot == _current_slot ||
-                command._pattern_id >= NUM_STORED_PATTERNS || command._generation <= _generation) break;
-            const pattern_switched ack{command._generation, command._pattern_id, _current_slot};
+                command._pattern_id >= NUM_STORED_PATTERNS) break;
+            const pattern_switched ack{command._pattern_id, _current_slot};
             // Only this thread produces acknowledgements; the UI can only
             // free space. A valid single outstanding request always has room.
             if (_patterns.completed.size() == _patterns.completed.capacity()) break;
             _current_slot = command._slot;
             _pattern_id = command._pattern_id;
-            _generation = command._generation;
             const bool published = _patterns.completed.try_push(ack);
             (void)published; // Guaranteed by the ownership/producer contract.
             break;

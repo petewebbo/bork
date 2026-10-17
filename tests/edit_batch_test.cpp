@@ -31,12 +31,12 @@ int main() {
     audio.process_commands(full); // Space reusable immediately, no completion polling.
     assert(audio._patterns.edits.empty());
 
-    // A stale payload is still consumed; the following valid payload stays aligned.
+    // A payload for another pattern is consumed; the next payload stays aligned.
     bork::pattern_edit edit{};
-    edit.generation = 999;
+    edit.pattern_id = 7;
     edit.value._tracks[0]._steps[0]._note = 1;
     assert(bork::try_submit_pattern_edit(commands, audio._patterns.edits, edit));
-    edit.generation = 0;
+    edit.pattern_id = 0;
     edit.value._tracks[0]._steps[0]._note = 67;
     assert(bork::try_submit_pattern_edit(commands, audio._patterns.edits, edit));
     audio.process_commands(commands);
@@ -45,14 +45,13 @@ int main() {
 
     // Activation, replacement and ordinary edits obey one common FIFO order.
     assert(commands.try_push({._type = bork::sequencer_command::type::activate_pattern,
-                              ._generation = 1, ._pattern_id = 1, ._slot = 1}));
-    edit.generation = 1;
+                              ._pattern_id = 1, ._slot = 1}));
     edit.pattern_id = 1;
     edit.value._tracks[0]._steps[0]._note = 72;
     assert(bork::try_submit_pattern_edit(commands, audio._patterns.edits, edit));
     assert(commands.try_push({._type = bork::sequencer_command::type::set_step,
                               ._step = 1, ._value = {._note = 80},
-                              ._generation = 1, ._pattern_id = 1}));
+                              ._pattern_id = 1}));
     audio.process_commands(commands);
     assert(audio.current_pattern()._tracks[0]._steps[0]._note == 72);
     assert(audio.current_pattern()._tracks[0]._steps[1]._note == 80);

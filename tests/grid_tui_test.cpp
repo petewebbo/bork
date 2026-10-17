@@ -13,18 +13,18 @@ int main() {
         switching._patterns.slots[1]._tracks[0]._steps[0] = {._note = 72, ._vel = 90};
         switching._transport._track_transport[0]._next_step = 7;
         switching.apply_command({._type = bork::sequencer_command::type::activate_pattern,
-                                 ._generation = 1, ._pattern_id = 1, ._slot = 1});
+                                 ._pattern_id = 1, ._slot = 1});
         assert(switching._current_slot == 1 && !switching._is_playing);
         assert(switching.current_pattern()._tracks[0]._steps[0]._note == 72);
         assert(switching._transport._track_transport[0]._next_step == 7);
         const auto* ack = switching._patterns.completed.front();
-        assert(ack && ack->retired_slot == 0 && ack->generation == 1);
+        assert(ack && ack->retired_slot == 0 && ack->pattern_id == 1);
         switching._patterns.completed.pop();
         switching.apply_command({._type = bork::sequencer_command::type::set_step,
-                                 ._value = {._note = 1}}); // Stale activation.
+                                 ._value = {._note = 1}}); // Different pattern.
         assert(switching.current_pattern()._tracks[0]._steps[0]._note == 72);
         switching.apply_command({._type = bork::sequencer_command::type::set_step,
-                                 ._value = {._note = 74}, ._generation = 1, ._pattern_id = 1});
+                                 ._value = {._note = 74}, ._pattern_id = 1});
         assert(switching.current_pattern()._tracks[0]._steps[0]._note == 74);
     }
     bork::sequencer_status status;

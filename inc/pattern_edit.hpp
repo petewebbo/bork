@@ -6,7 +6,6 @@
 namespace bork {
 
 struct pattern_edit {
-    uint64_t generation{};
     uint8_t pattern_id{};
     pattern value{};
 };
