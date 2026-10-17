@@ -16,11 +16,11 @@ int main() {
             const auto count = commands.size();
             for (size_t i = 0; i < count; ++i) {
                 const auto& command = *commands.front();
-                if (command._type == bork::sequencer_command::type::activate_pattern) {
-                    const bork::pattern_switched ack{command._pattern_id, current_slot};
-                    current_slot = command._slot;
+                if (command.type_ == bork::sequencer_command::type::activate_pattern) {
+                    const bork::pattern_switched ack{command.pattern_id_, current_slot};
+                    current_slot = command.slot_;
                     exchange.completed.try_push(ack);
-                } else if (command._type == bork::sequencer_command::type::update_pattern) {
+                } else if (command.type_ == bork::sequencer_command::type::update_pattern) {
                     // Like audio, consume exactly one payload per command marker.
                     if (exchange.edits.front()) exchange.edits.pop();
                 }

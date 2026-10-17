@@ -7,7 +7,7 @@ struct fixture {
     bork::sequencer audio;
     bork::pattern_storage storage{};
     bork::command_queue commands{32};
-    bork::GridWidget ui{storage, commands, audio._patterns};
+    bork::GridWidget ui{storage, commands, audio.patterns_};
     void flush() { audio.process_commands(commands); ui.poll_notifications(); }
 };
 
@@ -33,17 +33,17 @@ int main() {
         f.ui.move_cursor(0, 2, true); // Row selection.
         assert(f.ui.selection().bottom == 0 && f.ui.selection().right == 2);
         assert(f.ui.toggle_selection());
-        assert(f.storage[0]._tracks[0]._steps[2]._note == 60);
-        assert(f.audio.current_pattern()._tracks[0]._steps[2]._note == 0);
+        assert(f.storage[0].tracks_[0].steps_[2].note_ == 60);
+        assert(f.audio.current_pattern().tracks_[0].steps_[2].note_ == 0);
         f.flush();
-        assert(f.audio.current_pattern()._tracks[0]._steps[2]._note == 60);
+        assert(f.audio.current_pattern().tracks_[0].steps_[2].note_ == 60);
         f.ui.copy_selection();
         f.ui.set_cursor(4, 15);
         assert(f.ui.paste()); // 1x3 clipped to 1x1.
         f.flush();
-        assert(f.storage[0]._tracks[4]._steps[15]._note == 60);
-        assert(f.storage[0]._tracks[4]._steps[14]._note == 0);
-        assert(f.storage[0]._tracks[5]._steps[0]._note == 0);
+        assert(f.storage[0].tracks_[4].steps_[15].note_ == 60);
+        assert(f.storage[0].tracks_[4].steps_[14].note_ == 0);
+        assert(f.storage[0].tracks_[5].steps_[0].note_ == 0);
     }
     {
         fixture f;
@@ -51,41 +51,41 @@ int main() {
         f.ui.togglecell();
         f.ui.move_cursor(1, 1, true);
         assert(f.ui.toggle_selection());
-        assert(f.storage[0]._tracks[0]._steps[0]._note == 0);
-        assert(f.storage[0]._tracks[1]._steps[1]._note == 60);
+        assert(f.storage[0].tracks_[0].steps_[0].note_ == 0);
+        assert(f.storage[0].tracks_[1].steps_[1].note_ == 60);
         f.flush();
         assert(f.ui.clear_selection());
         assert(f.ui.selection().multiple());
-        assert(f.storage[0]._tracks[1]._steps[1]._note == 0);
-        assert(f.storage[0]._tracks[1]._steps[1]._vel == 100);
+        assert(f.storage[0].tracks_[1].steps_[1].note_ == 0);
+        assert(f.storage[0].tracks_[1].steps_[1].vel_ == 100);
         f.flush();
         assert(f.ui.toggle_selection());
         f.flush();
         f.ui.set_cursor(1, 1);
         assert(f.ui.clear_selection()); // No multi-select: clears entire row.
-        assert(f.storage[0]._tracks[1]._steps[0]._note == 0);
-        assert(f.storage[0]._tracks[0]._steps[0]._note == 60);
+        assert(f.storage[0].tracks_[1].steps_[0].note_ == 0);
+        assert(f.storage[0].tracks_[0].steps_[0].note_ == 60);
     }
     {
         fixture f;
-        f.storage[0]._tracks[0]._steps[0] = {._note = 67, ._vel = 81, ._len = 9};
-        f.storage[0]._tracks[7]._steps[15] = {._note = 74, ._vel = 99, ._len = 13};
-        f.storage[0]._tracks[7]._size = 12;
+        f.storage[0].tracks_[0].steps_[0] = {.note_ = 67, .vel_ = 81, .len_ = 9};
+        f.storage[0].tracks_[7].steps_[15] = {.note_ = 74, .vel_ = 99, .len_ = 13};
+        f.storage[0].tracks_[7].size_ = 12;
         assert(f.ui.input_mode_key('C') && f.ui.awaiting_copy_);
         assert(f.ui.input_mode_key('x') && f.ui.input_mode_key('q'));
         assert(f.commands.empty());
         assert(f.ui.input_mode_key('p') && !f.ui.awaiting_copy_);
         assert(!f.ui.awaiting_pattern_);
         // Pattern clipboard is a snapshot, not a reference.
-        f.storage[0]._tracks[7]._steps[15]._note = 1;
+        f.storage[0].tracks_[7].steps_[15].note_ = 1;
         assert(f.ui.select_pattern(1));
         f.ui.set_cursor(4, 15);
         assert(f.ui.paste()); // Queued after activation; replaces whole pattern at origin.
         f.flush();
-        assert(f.audio._pattern_id == 1);
-        assert(f.audio.current_pattern()._tracks[7]._steps[15]._note == 74);
-        assert(f.storage[1]._tracks[7]._size == 12);
-        assert(f.storage[1]._tracks[0]._steps[0]._len == 9);
+        assert(f.audio.pattern_id_ == 1);
+        assert(f.audio.current_pattern().tracks_[7].steps_[15].note_ == 74);
+        assert(f.storage[1].tracks_[7].size_ == 12);
+        assert(f.storage[1].tracks_[0].steps_[0].len_ == 9);
         assert(f.ui.current_row_ == 4 && f.ui.current_col_ == 15);
         f.ui.set_cursor(0, 0);
         assert(f.ui.togglecell() && f.ui.togglecell()); // Pasted note remembered.
@@ -99,20 +99,20 @@ int main() {
     {
         fixture f;
         // Includes empty cells and all fields; overlap does not change source snapshot.
-        f.storage[0]._tracks[0]._steps[0] = {._note = 63, ._vel = 77, ._len = 8};
+        f.storage[0].tracks_[0].steps_[0] = {.note_ = 63, .vel_ = 77, .len_ = 8};
         f.ui.move_cursor(0, 1, true);
         assert(f.ui.input_mode_key('C') && f.ui.input_mode_key('s'));
         f.ui.set_cursor(0, 1);
         assert(f.ui.paste());
-        assert(f.storage[0]._tracks[0]._steps[1]._note == 63);
-        assert(f.storage[0]._tracks[0]._steps[1]._len == 8);
-        assert(f.storage[0]._tracks[0]._steps[2]._note == 0);
+        assert(f.storage[0].tracks_[0].steps_[1].note_ == 63);
+        assert(f.storage[0].tracks_[0].steps_[1].len_ == 8);
+        assert(f.storage[0].tracks_[0].steps_[2].note_ == 0);
         f.flush();
         f.ui.set_cursor(3, 14);
         assert(f.ui.paste());
         f.flush();
-        assert(f.storage[0]._tracks[3]._steps[14]._vel == 77);
-        assert(f.storage[0]._tracks[3]._steps[15]._note == 0);
+        assert(f.storage[0].tracks_[3].steps_[14].vel_ == 77);
+        assert(f.storage[0].tracks_[3].steps_[15].note_ == 0);
         // Selection resets on pattern selection, not on later acknowledgement.
         f.ui.move_cursor(-1, -1, true);
         assert(f.ui.select_pattern(2));
@@ -128,7 +128,7 @@ int main() {
         f.ui.move_cursor(1, 1, true);
         assert(!f.ui.toggle_selection()); // Payload queue full: no partial changes.
         assert(!f.ui.clear_selection());
-        assert(f.storage[0]._tracks[0]._steps[0]._note == 0);
+        assert(f.storage[0].tracks_[0].steps_[0].note_ == 0);
         f.audio.process_commands(f.commands); // No completion polling needed for reuse.
         assert(f.ui.toggle_selection());
         f.flush();
@@ -136,7 +136,7 @@ int main() {
         bork::pattern_exchange exchange;
         bork::GridWidget blocked(f.storage, full, exchange);
         blocked.copy_pattern();
-        assert(full.try_push({._type = bork::sequencer_command::type::toggle_play}));
+        assert(full.try_push({.type_ = bork::sequencer_command::type::toggle_play}));
         assert(!blocked.paste());
         assert(blocked.note_number(0, 0) == 60);
         assert(full.front());

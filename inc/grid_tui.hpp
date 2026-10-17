@@ -22,7 +22,7 @@ public:
         for (size_t id = 0; id < NUM_STORED_PATTERNS; ++id)
             for (size_t row = 0; row < ROWS; ++row)
                 for (size_t col = 0; col < COLS; ++col) {
-                    const int note = storage_[id]._tracks[row]._steps[col]._note;
+                    const int note = storage_[id].tracks_[row].steps_[col].note_;
                     notes_[id][row][col] = note != 0 ? note : kDefaultNoteNumber;
                 }
         refresh_grid();
@@ -70,9 +70,9 @@ public:
         if (id == selected_pattern_) { message_ = nullptr; return true; }
         exchange_.slots[spare_slot_] = storage_[id];
         const sequencer_command command{
-            ._type = sequencer_command::type::activate_pattern,
-            ._pattern_id = static_cast<uint8_t>(id),
-            ._slot = spare_slot_,
+            .type_ = sequencer_command::type::activate_pattern,
+            .pattern_id_ = static_cast<uint8_t>(id),
+            .slot_ = spare_slot_,
         };
         if (!enqueue(command)) return false;
         selected_pattern_ = id;
@@ -93,37 +93,37 @@ public:
         }
     }
     bool toggleplay() {
-        return enqueue({._type = sequencer_command::type::toggle_play});
+        return enqueue({.type_ = sequencer_command::type::toggle_play});
     }
     bool togglecell() {
-        auto step = storage_[selected_pattern_]._tracks[current_row_]._steps[current_col_];
+        auto step = storage_[selected_pattern_].tracks_[current_row_].steps_[current_col_];
         const bool active = !grid_state_[current_row_][current_col_];
         if (active) {
-            if (step._vel <= 0) step._vel = 100;
-            step._note = notes_[selected_pattern_][current_row_][current_col_];
-        } else step._note = 0;
+            if (step.vel_ <= 0) step.vel_ = 100;
+            step.note_ = notes_[selected_pattern_][current_row_][current_col_];
+        } else step.note_ = 0;
         const sequencer_command command{
-            ._type = sequencer_command::type::set_step,
-            ._track = static_cast<uint8_t>(current_row_),
-            ._step = static_cast<uint8_t>(current_col_),
-            ._value = step,
-            ._pattern_id = static_cast<uint8_t>(selected_pattern_),
+            .type_ = sequencer_command::type::set_step,
+            .track_ = static_cast<uint8_t>(current_row_),
+            .step_ = static_cast<uint8_t>(current_col_),
+            .value_ = step,
+            .pattern_id_ = static_cast<uint8_t>(selected_pattern_),
         };
         if (!enqueue(command)) return false;
-        storage_[selected_pattern_]._tracks[current_row_]._steps[current_col_] = step;
+        storage_[selected_pattern_].tracks_[current_row_].steps_[current_col_] = step;
         grid_state_[current_row_][current_col_] = active;
         return true;
     }
     bool clearrow() {
         const sequencer_command command{
-            ._type = sequencer_command::type::clear_track,
-            ._track = static_cast<uint8_t>(current_row_),
-            ._pattern_id = static_cast<uint8_t>(selected_pattern_),
+            .type_ = sequencer_command::type::clear_track,
+            .track_ = static_cast<uint8_t>(current_row_),
+            .pattern_id_ = static_cast<uint8_t>(selected_pattern_),
         };
         if (!enqueue(command)) return false;
         for (size_t col = 0; col < COLS; ++col) {
             grid_state_[current_row_][col] = false;
-            storage_[selected_pattern_]._tracks[current_row_]._steps[col]._note = 0;
+            storage_[selected_pattern_].tracks_[current_row_].steps_[col].note_ = 0;
         }
         return true;
     }
@@ -133,11 +133,11 @@ public:
         auto edited = storage_[selected_pattern_];
         for (size_t row = area.top; row <= area.bottom; ++row)
             for (size_t col = area.left; col <= area.right; ++col) {
-                auto& step = edited._tracks[row]._steps[col];
-                if (step._note) step._note = 0;
+                auto& step = edited.tracks_[row].steps_[col];
+                if (step.note_) step.note_ = 0;
                 else {
-                    step._note = notes_[selected_pattern_][row][col];
-                    if (step._vel <= 0) step._vel = 100;
+                    step.note_ = notes_[selected_pattern_][row][col];
+                    if (step.vel_ <= 0) step.vel_ = 100;
                 }
             }
         return submit_edit(edited);
@@ -148,7 +148,7 @@ public:
         auto edited = storage_[selected_pattern_];
         for (size_t row = area.top; row <= area.bottom; ++row)
             for (size_t col = area.left; col <= area.right; ++col)
-                edited._tracks[row]._steps[col]._note = 0;
+                edited.tracks_[row].steps_[col].note_ = 0;
         return submit_edit(edited);
     }
     void copy_pattern() {
@@ -163,8 +163,8 @@ public:
         clipboard_cols_ = area.right - area.left + 1;
         for (size_t row = 0; row < clipboard_rows_; ++row)
             for (size_t col = 0; col < clipboard_cols_; ++col)
-                clipboard_._tracks[row]._steps[col] =
-                    storage_[selected_pattern_]._tracks[area.top + row]._steps[area.left + col];
+                clipboard_.tracks_[row].steps_[col] =
+                    storage_[selected_pattern_].tracks_[area.top + row].steps_[area.left + col];
         clipboard_type_ = clipboard_type::selection;
         std::snprintf(feedback_.data(), feedback_.size(), "Copied selection: %zu rows x %zu steps",
                       clipboard_rows_, clipboard_cols_);
@@ -179,7 +179,7 @@ public:
         if (whole) edited = clipboard_;
         else for (size_t row = 0; row < rows; ++row)
             for (size_t col = 0; col < cols; ++col)
-                edited._tracks[current_row_ + row]._steps[current_col_ + col] = clipboard_._tracks[row]._steps[col];
+                edited.tracks_[current_row_ + row].steps_[current_col_ + col] = clipboard_.tracks_[row].steps_[col];
         if (!submit_edit(edited)) return false;
         // Pasted notes replace remembered notes only in the affected region.
         for (size_t row = 0; row < rows; ++row)
@@ -193,7 +193,7 @@ public:
         return true;
     }
     int note_number(size_t row, size_t col) const {
-        return storage_[selected_pattern_]._tracks[row]._steps[col]._note;
+        return storage_[selected_pattern_].tracks_[row].steps_[col].note_;
     }
     std::array<std::array<bool, COLS>, ROWS> grid_state_{};
     size_t current_row_{};

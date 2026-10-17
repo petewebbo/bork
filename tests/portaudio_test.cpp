@@ -43,7 +43,7 @@ struct client : ezpz_portaudio<float> {
     bool fail{};
     int process(unsigned long frames) override {
         if (fail) throw std::runtime_error("callback failure");
-        for (auto* output : _out_buffer_ptrs) std::fill_n(output, frames, 0.25f);
+        for (auto* output : out_buffer_ptrs_) std::fill_n(output, frames, 0.25f);
         return paContinue;
     }
 };

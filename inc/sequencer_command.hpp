@@ -10,13 +10,13 @@ namespace bork {
 
 struct sequencer_command {
     enum class type : uint8_t { set_step, clear_track, set_tempo, toggle_play, activate_pattern, update_pattern };
-    type _type{};
-    uint8_t _track{};
-    uint8_t _step{};
-    step _value{};
-    float _tempo{};
-    uint8_t _pattern_id{}; // Zero-based stored pattern index.
-    uint8_t _slot{};
+    type type_{};
+    uint8_t track_{};
+    uint8_t step_{};
+    step value_{};
+    float tempo_{};
+    uint8_t pattern_id_{}; // Zero-based stored pattern index.
+    uint8_t slot_{};
 };
 static_assert(std::is_trivially_copyable_v<sequencer_command>);
 static_assert(std::atomic<size_t>::is_always_lock_free);

@@ -23,7 +23,7 @@ inline bool try_submit_pattern_edit(command_queue& commands, pattern_edit_queue&
     const bool payload_pushed = edits.try_push(edit);
     assert(payload_pushed);
     const bool marker_pushed = commands.try_push(
-        sequencer_command{._type = sequencer_command::type::update_pattern});
+        sequencer_command{.type_ = sequencer_command::type::update_pattern});
     assert(marker_pushed);
     (void)payload_pushed;
     (void)marker_pushed;
