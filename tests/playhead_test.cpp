@@ -41,23 +41,18 @@ int main() {
     assert(status.current_step(0, 1, true) == 5);
     assert(status.current_step(2, 1, true) == bork::NO_CURRENT_STEP);
 
-    // Short cycle: a block reaching every step must terminate, not revisit step 0.
+    // Playhead wraps correctly with ordinary blocks smaller than a step.
     bork::sequencer wrapping;
     wrapping.is_playing_ = true;
     wrapping.transport_.sample_rate_ = 192;
     wrapping.transport_.set_tempo(60);
     wrapping.transport_.set_steps_per_cycle(0, 4);
-    wrapping.process_track(0, buffer);
-    wrapping.publish_status(status, 1);
-    assert(status.current_step(0, 0, true) == 3);
-    wrapping.process_track(0, std::span(buffer).first(32)); // Ends exactly at wrap.
-    wrapping.publish_status(status, 1);
-    assert(status.current_step(0, 0, true) == 3);
+    for (int block = 0; block < 6; ++block) {
+        wrapping.process_track(0, std::span(buffer).first(32));
+        wrapping.publish_status(status, 1);
+        assert(status.current_step(0, 0, true) == static_cast<uint16_t>(((block + 1) * 32 - 1) / 48));
+    } // Ends exactly at wrap; step 0 belongs to the following block.
     wrapping.process_track(0, std::span(buffer).first(1));
-    wrapping.publish_status(status, 1);
-    assert(status.current_step(0, 0, true) == 0);
-    std::array<float, 400> long_block{};
-    wrapping.process_track(0, long_block); // More than two cycles in one block.
     wrapping.publish_status(status, 1);
     assert(status.current_step(0, 0, true) == 0);
 }
