@@ -44,7 +44,7 @@ private:
                 std::copy_n(main_buffer.data(), count, output + offset);
             offset += count;
         }
-        status_.playing.store(sequencer.is_playing_, std::memory_order_relaxed);
+        sequencer.publish_status(status_, TRACKS_TO_PROCESS);
         return paContinue;
     }
 };

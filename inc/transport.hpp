@@ -3,6 +3,7 @@
 #include "bork_defines.hpp"
 #include <array>
 #include <cstdint>
+#include <cmath>
 
 /**
 this should deal with counting the samples and woeking out what step we're on
@@ -29,8 +30,9 @@ struct track_transport {
     uint32_t cycle_start_sample_;
     uint32_t block_start_sample_{};
     uint32_t block_end_sample_{};
-    uint16_t last_step_played_{};
+    uint16_t last_step_played_{NO_CURRENT_STEP};
     uint16_t next_step_{};
+    uint32_t next_event_sample_in_block_{};
 
     track_transport(float fs = 48000.0f, float tempo = 120.0f) {
         steps_per_cycle_ = 16;
@@ -71,12 +73,9 @@ struct track_transport {
 
     void block_update(uint32_t num_samp) {
         block_start_sample_ = block_end_sample_;
-        block_end_sample_ = block_start_sample_ + num_samp;
-        block_end_sample_ =
-            (static_cast<float>(block_end_sample_) > samples_per_cycle_)
-                ? block_end_sample_ - samples_per_cycle_
-                : block_end_sample_;
-        // deal with float extra bit?
+        block_end_sample_ = static_cast<uint32_t>(std::fmod(
+            static_cast<double>(block_start_sample_) + num_samp, samples_per_cycle_));
+        next_event_sample_in_block_ = 0;
     }
 
     void step_update() {
@@ -89,6 +88,8 @@ struct track_transport {
     uint32_t get_next_step_sample(uint32_t num_samples, bool update_step = true) {
         auto sample = step_to_sample_in_block(next_step_, num_samples);
         if (update_step && sample != STEP_OUT_OF_BLOCK) {
+            last_step_played_ = next_step_; // Includes steps with no note.
+            next_event_sample_in_block_ = sample + 1;
             step_update();
         }
         return sample;
@@ -98,7 +99,7 @@ struct track_transport {
     // step delay and such
     uint32_t step_to_sample_in_block(uint16_t step_idx, uint32_t num_samples) {
         auto sample_in_cycle = static_cast<uint32_t>(step_idx * samples_per_step_);
-        uint32_t sample_in_block;
+        double sample_in_block;
 
         // deal with wraparound to start of cycle
         if (sample_in_cycle < block_start_sample_) {
@@ -107,8 +108,14 @@ struct track_transport {
             sample_in_block = sample_in_cycle - block_start_sample_;
         }
 
+        // A wrapped step may occur again later in a long block, but never
+        // revisit an event already processed earlier in this block.
+        if (sample_in_block < next_event_sample_in_block_) {
+            sample_in_block += std::ceil((next_event_sample_in_block_ - sample_in_block) /
+                                        samples_per_cycle_) * samples_per_cycle_;
+        }
         if (sample_in_block < num_samples) {
-            return sample_in_block;
+            return static_cast<uint32_t>(sample_in_block);
         } else {
             return STEP_OUT_OF_BLOCK;
         }

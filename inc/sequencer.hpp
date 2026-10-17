@@ -6,6 +6,7 @@
 #include "pattern_exchange.hpp"
 #include "sampler.hpp"
 #include "sequencer_command.hpp"
+#include "sequencer_status.hpp"
 #include <cmath>
 #include "transport.hpp"
 #include <array>
@@ -87,6 +88,16 @@ struct sequencer {
             break;
         }
         }
+    }
+
+    // Call once after rendering the entire device block, not each scratch chunk.
+    void publish_status(sequencer_status& status, size_t processed_tracks) const noexcept {
+        for (size_t track = 0; track < MAX_NUM_TRACKS; ++track) {
+            const auto step = track < processed_tracks
+                ? transport_.track_transport_[track].last_step_played_ : NO_CURRENT_STEP;
+            status.publish_position(track, pattern_id_, step);
+        }
+        status.playing.store(is_playing_, std::memory_order_relaxed);
     }
 
     void process_track(uint8_t track_idx, std::span<float> track_buffer) {
