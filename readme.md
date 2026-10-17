@@ -33,7 +33,9 @@ command queue rather than accessing live audio state.
 - Click a cell to select/toggle it; **x** toggles every selected cell independently.
 - **Space** toggles sequencer playback through the command queue.
 - **Arrows** move; **Shift+arrows** extend a rectangular selection. Normal
-  movement/click collapses it. **Home/End** jump to the first/last step.
+  movement/click collapses it. **Ctrl+Shift+arrows** extend selection straight to
+  the grid edge in that direction, preserving the anchor. **Home/End** jump to
+  the first/last step.
 - **c** clears the selection, or the current row when only one cell is selected.
 - **C**, then **p/s** copies the whole pattern/selection; **Escape** cancels.
 - **V** pastes. A selection paste starts at the cursor and clips at the visible
@@ -51,7 +53,7 @@ monochrome fallbacks). Selection is anchor-to-cursor, inclusive, and persists
 until normal movement, clicking or a pattern change.
 
 Shift-arrows support standard xterm `CSI 1;2 A/B/C/D` sequences and native ncurses
-shifted-arrow codes. A terminal must actually send shifted keys distinctly;
+shifted-arrow codes. Ctrl+Shift-arrows use xterm `CSI 1;6 A/B/C/D` sequences. A terminal must actually send shifted keys distinctly;
 terminals configured to intercept these shortcuts may need configuration.
 The standalone preview was exercised under a pseudo-terminal using xterm input.
 

@@ -31,6 +31,9 @@ public:
     void move_cursor(int dy, int dx, bool extend = false) {
         selection_.move(current_row_, current_col_, dy, dx, extend, ROWS, COLS);
     }
+    void select_to_edge(int dy, int dx) {
+        move_cursor(dy * static_cast<int>(ROWS), dx * static_cast<int>(COLS), true);
+    }
     void set_cursor(size_t row, size_t col) {
         current_row_ = std::min(row, ROWS - 1);
         current_col_ = std::min(col, COLS - 1);

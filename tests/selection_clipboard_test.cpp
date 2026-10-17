@@ -14,6 +14,30 @@ struct fixture {
 int main() {
     {
         fixture f;
+        f.ui.set_cursor(2, 5);
+        f.ui.select_to_edge(0, 1);
+        auto area = f.ui.selection();
+        assert(f.ui.current_col_ == 15 && area.left == 5 && area.right == 15);
+        assert(area.top == 2 && area.bottom == 2);
+        f.ui.select_to_edge(0, -1); // Same anchor; cross it to the other edge.
+        area = f.ui.selection();
+        assert(f.ui.current_col_ == 0 && area.left == 0 && area.right == 5);
+        f.ui.select_to_edge(-1, 0);
+        area = f.ui.selection();
+        assert(f.ui.current_row_ == 0 && area.top == 0 && area.bottom == 2);
+        f.ui.select_to_edge(1, 0);
+        area = f.ui.selection();
+        assert(f.ui.current_row_ == 4 && area.top == 2 && area.bottom == 4);
+        f.ui.set_cursor(2, 5);
+        f.ui.move_cursor(0, -1, true);
+        f.ui.select_to_edge(0, 1); // Continue an ordinary Shift selection.
+        assert(f.ui.selection().left == 5 && f.ui.selection().right == 15);
+        f.ui.set_cursor(0, 0);
+        f.ui.select_to_edge(-1, 0); // Already at edge: no wrap.
+        assert(!f.ui.selection().multiple() && f.ui.current_row_ == 0);
+    }
+    {
+        fixture f;
         assert(!f.ui.paste() && f.commands.empty());
         f.ui.set_cursor(2, 3);
         f.ui.move_cursor(-1, -2, true);

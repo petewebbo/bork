@@ -14,6 +14,10 @@ existing command queue. No system clipboard integration or cross-process data.
 
 - Normal arrow movement moves the cursor and collapses selection to that cell.
 - Shift + arrow starts or extends a rectangular selection.
+- Ctrl + Shift + arrow moves to the grid edge in that direction and selects
+  everything between anchor and endpoint. Right/left goes to last/first step;
+  down/up goes to last/first visible track. Keep the existing anchor, or start
+  one at the cursor if no selection has been started.
 - The anchor is the cursor position before the first Shift movement; the cursor
   is the moving endpoint. Reversing movement shrinks or crosses the anchor.
 - Selection is defined by inclusive extents:
@@ -144,6 +148,8 @@ pattern switches and remains reusable after paste.
 
 - Shift movement produces correct extents in every direction, including crossing
   the anchor, shrinking, edge clamping, row/column selection and a single cell.
+- Ctrl+Shift movement reaches all four edges without wrapping, preserves an
+  existing Shift-selection anchor, and handles movement already at an edge.
 - Normal movement, click and pattern selection reset selection as specified.
 - Selected empty/active cells render consistently; cursor remains distinguishable.
 - Copy prompt routes p/s/Escape correctly without editing or exiting the app.

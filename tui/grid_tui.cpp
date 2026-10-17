@@ -14,6 +14,8 @@ constexpr int MIN_HEIGHT = TOP + (GridWidget::ROWS - 1) * ROW_H + 2;
 constexpr short SELECTED_ACTIVE_PAIR = 6, STATUS_PAIR = 7, SELECTION_PAIR = 8;
 constexpr int SHIFT_UP = 0x2000, SHIFT_DOWN = 0x2001,
               SHIFT_LEFT = 0x2002, SHIFT_RIGHT = 0x2003;
+constexpr int CTRL_SHIFT_UP = 0x2004, CTRL_SHIFT_DOWN = 0x2005,
+              CTRL_SHIFT_LEFT = 0x2006, CTRL_SHIFT_RIGHT = 0x2007;
 constexpr const char* names[] = {"Kick", "Snare", "Clap", "HH", "Open HH"};
 
 struct Terminal {
@@ -29,6 +31,10 @@ struct Terminal {
         define_key("\033[1;2B", SHIFT_DOWN);
         define_key("\033[1;2D", SHIFT_LEFT);
         define_key("\033[1;2C", SHIFT_RIGHT);
+        define_key("\033[1;6A", CTRL_SHIFT_UP);
+        define_key("\033[1;6B", CTRL_SHIFT_DOWN);
+        define_key("\033[1;6D", CTRL_SHIFT_LEFT);
+        define_key("\033[1;6C", CTRL_SHIFT_RIGHT);
         timeout(50); // Refresh telemetry even when no keys arrive.
         curs_set(0);
         mousemask(ALL_MOUSE_EVENTS, nullptr);
@@ -147,6 +153,10 @@ void run_grid_tui(GridWidget& widget, const sequencer_status& status) {
         case SHIFT_DOWN: case KEY_SF: widget.move_cursor(1, 0, true); break;
         case SHIFT_LEFT: case KEY_SLEFT: widget.move_cursor(0, -1, true); break;
         case SHIFT_RIGHT: case KEY_SRIGHT: widget.move_cursor(0, 1, true); break;
+        case CTRL_SHIFT_UP: widget.select_to_edge(-1, 0); break;
+        case CTRL_SHIFT_DOWN: widget.select_to_edge(1, 0); break;
+        case CTRL_SHIFT_LEFT: widget.select_to_edge(0, -1); break;
+        case CTRL_SHIFT_RIGHT: widget.select_to_edge(0, 1); break;
         case KEY_HOME: widget.set_cursor(widget.current_row_, 0); break;
         case KEY_END: widget.set_cursor(widget.current_row_, GridWidget::COLS - 1); break;
         case 'x': widget.toggle_selection(); break;
