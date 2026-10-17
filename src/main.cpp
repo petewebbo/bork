@@ -80,7 +80,7 @@ int main() try {
     // Construct before activation: UI snapshots state while no callback can mutate it.
     // Queue and UI outlive audio, including exception-path shutdown.
     bork::command_queue commands(bork::COMMAND_QUEUE_CAPACITY);
-    bork::GridWidget widget(sequencer._pattern, commands);
+    bork::GridWidget widget(sequencer.current_pattern(), commands);
     bork::sequencer_status status;
     audio_client<float> audio("bork", commands, status);
     audio.init(0, 2); // Default output device; no microphone/input required.

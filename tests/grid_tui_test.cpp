@@ -8,6 +8,25 @@
 #include <thread>
 
 int main() {
+    {
+        bork::sequencer switching{};
+        switching._patterns.slots[1]._tracks[0]._steps[0] = {._note = 72, ._vel = 90};
+        switching._transport._track_transport[0]._next_step = 7;
+        switching.apply_command({._type = bork::sequencer_command::type::activate_pattern,
+                                 ._generation = 1, ._pattern_id = 1, ._slot = 1});
+        assert(switching._current_slot == 1 && !switching._is_playing);
+        assert(switching.current_pattern()._tracks[0]._steps[0]._note == 72);
+        assert(switching._transport._track_transport[0]._next_step == 7);
+        const auto* ack = switching._patterns.completed.front();
+        assert(ack && ack->retired_slot == 0 && ack->generation == 1);
+        switching._patterns.completed.pop();
+        switching.apply_command({._type = bork::sequencer_command::type::set_step,
+                                 ._value = {._note = 1}}); // Stale activation.
+        assert(switching.current_pattern()._tracks[0]._steps[0]._note == 72);
+        switching.apply_command({._type = bork::sequencer_command::type::set_step,
+                                 ._value = {._note = 74}, ._generation = 1, ._pattern_id = 1});
+        assert(switching.current_pattern()._tracks[0]._steps[0]._note == 74);
+    }
     bork::sequencer_status status;
     const auto& published = status;
     assert(!published.playing.load(std::memory_order_relaxed));
@@ -24,23 +43,24 @@ int main() {
     assert(!bork::lookup_midi_note(-1) && !bork::lookup_midi_note(128));
     {
         bork::sequencer pitched{};
-        pitched._pattern._tracks[0]._steps[0] = {._note = 61, ._vel = 90};
+        auto& pitched_pattern = pitched.current_pattern();
+        pitched_pattern._tracks[0]._steps[0] = {._note = 61, ._vel = 90};
         bork::command_queue queue(8);
-        bork::GridWidget ui(pitched._pattern, queue);
+        bork::GridWidget ui(pitched_pattern, queue);
         assert(ui.note_number(0, 0) == 61);
         assert(ui.togglecell());
         assert(ui.note_number(0, 0) == 0);
         assert(ui.togglecell());
         assert(ui.note_number(0, 0) == 61);
         pitched.process_commands(queue);
-        assert(pitched._pattern._tracks[0]._steps[0]._note == 61);
+        assert(pitched_pattern._tracks[0]._steps[0]._note == 61);
         assert(ui.clearrow());
         assert(ui.togglecell());
         pitched.process_commands(queue);
-        assert(pitched._pattern._tracks[0]._steps[0]._note == 61);
+        assert(pitched_pattern._tracks[0]._steps[0]._note == 61);
     }
     bork::sequencer engine{};
-    auto& pattern = engine._pattern;
+    auto& pattern = engine.current_pattern();
     pattern._tracks[0]._steps[3] = {._note = 1, ._vel = 80, ._len = 12};
     pattern._tracks[4]._steps[14] = {._note = 1, ._vel = 40};
     bork::command_queue commands(bork::COMMAND_QUEUE_CAPACITY);
