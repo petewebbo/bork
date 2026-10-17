@@ -16,7 +16,7 @@ successful submission rather than waiting for audio acknowledgement.
 
 ## Selection and editing
 
-1. Press P, then 1–8. The always-visible bottom status bar prompts
+1. Press P, then 1–8. The always-visible top status bar prompts
    'Select pattern 1–8 / Esc: cancel'. Number selection clears the prompt;
    Escape cancels without quitting. Other keys cannot edit/control playback
    while awaiting a number. Poll status/acknowledgements as usual. The bar also
@@ -65,5 +65,5 @@ currently selected pattern is a no-op when no request is pending.
 - Queue-full does not change display/storage; pending request rejects another.
 - Repeated swaps safely recycle slots and preserve position/tails.
 - Status-bar input handles numbers/cancellation, blocks editing while awaiting
-  a number, and survives resize. The bottom bar remains visible when empty.
+  a number, and survives resize. The top bar remains visible when empty.
 - Idle UI polls acknowledgements; shutdown with a pending request is safe.

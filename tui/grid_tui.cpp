@@ -45,20 +45,20 @@ void draw_status_bar(const GridWidget& widget) {
     const int width = getmaxx(stdscr), height = getmaxy(stdscr);
     if (width < 1 || height < 1) return;
     attrset(has_colors() ? COLOR_PAIR(STATUS_PAIR) : A_REVERSE);
-    // Always paint the entire bottom row, including when there is no message.
-    mvhline(height - 1, 0, ' ', width);
+    // Always paint the entire top row, including when there is no message.
+    mvhline(0, 0, ' ', width);
     const char* text = widget.awaiting_pattern_ ? "Select pattern 1-8 | Esc: cancel"
         : widget.message_ ? widget.message_
         : widget.switch_pending_ ? "Pattern switch pending" : "";
-    if (width > 2) mvaddnstr(height - 1, 1, text, width - 2);
+    if (width > 2) mvaddnstr(0, 1, text, width - 2);
     attrset(A_NORMAL);
 }
 void draw(const GridWidget& widget, const sequencer_status& status) {
     erase();
     if (!fits()) {
         const char* prompt = "Resize terminal (90 x 15) | q quits";
-        if (getmaxy(stdscr) > 0 && getmaxx(stdscr) > 1)
-            mvaddnstr(0, 0, prompt, getmaxx(stdscr) - 1);
+        if (getmaxy(stdscr) > 1 && getmaxx(stdscr) > 1)
+            mvaddnstr(1, 0, prompt, getmaxx(stdscr) - 1);
         draw_status_bar(widget);
         refresh();
         return;

@@ -34,7 +34,7 @@ command queue rather than accessing live audio state.
 - **Space** toggles sequencer playback through the command queue.
 - **Arrows** select a cell; **Home/End** jump to the first/last step.
 - **C** clears the selected row.
-- **P**, then **1–8** selects a pattern. The permanent bottom status bar prompts
+- **P**, then **1–8** selects a pattern. The permanent top status bar prompts
   for the number; **Escape** cancels. Other keys do not edit or control playback
   while waiting for a number. The bar also shows errors/pending feedback and
   remains visible when empty.
