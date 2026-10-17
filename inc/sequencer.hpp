@@ -64,6 +64,17 @@ struct sequencer {
         case sequencer_command::type::toggle_play:
             _is_playing = !_is_playing;
             break;
+        case sequencer_command::type::replace_pattern: {
+            if (command._slot >= NUM_EDIT_SLOTS) break;
+            // Every submitted slot is returned, even when its target is stale.
+            // One completion per outstanding slot guarantees capacity.
+            if (_patterns.edits_completed.size() == _patterns.edits_completed.capacity()) break;
+            if (command._generation == _generation && command._pattern_id == _pattern_id)
+                pattern = _patterns.edits[command._slot];
+            const bool returned = _patterns.edits_completed.try_push(command._slot);
+            (void)returned;
+            break;
+        }
         case sequencer_command::type::activate_pattern: {
             if (command._slot >= _patterns.slots.size() || command._slot == _current_slot ||
                 command._pattern_id >= NUM_STORED_PATTERNS || command._generation <= _generation) break;

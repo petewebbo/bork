@@ -9,7 +9,7 @@
 namespace bork {
 
 struct sequencer_command {
-    enum class type : uint8_t { set_step, clear_track, set_tempo, toggle_play, activate_pattern };
+    enum class type : uint8_t { set_step, clear_track, set_tempo, toggle_play, activate_pattern, replace_pattern };
     type _type{};
     uint8_t _track{};
     uint8_t _step{};
