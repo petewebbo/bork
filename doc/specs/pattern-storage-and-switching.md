@@ -1,7 +1,7 @@
 # Pattern storage and double-buffered switching
 
-Status: agreed, amended to display the requested pattern immediately on successful
-submission rather than waiting for audio acknowledgement.
+Status: implemented. The UI displays the requested pattern immediately on
+successful submission rather than waiting for audio acknowledgement.
 
 ## Ownership
 

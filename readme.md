@@ -26,18 +26,21 @@ stream. The mono sequencer mix is sent to every output channel.
 
 The main application displays a five-track, sixteen-step ncurses grid: Kick,
 Snare, Clap, HH and Open HH. It needs a 90 × 15 terminal. The initial grid reads
-`sequencer._pattern` before audio starts; subsequent edits go through an SPSC
-command queue rather than accessing live sequencer state.
+an eight-pattern UI-owned storage bank, initialised before audio starts. Pattern 1
+contains the startup pattern; patterns 2–8 start empty. Edits go through an SPSC
+command queue rather than accessing live audio state.
 
 - Click a cell or press **x** to toggle it.
 - **Space** toggles sequencer playback through the command queue.
 - **Arrows** select a cell; **Home/End** jump to the first/last step.
 - **C** clears the selected row.
+- **P**, then **1–8** selects a pattern via a small popup. **Escape** cancels
+  the popup; other keys do not edit or control playback while it is open.
 - **q/Q/Escape** quits and stops audio.
 
 Active cells display MIDI note names using `inc/midi_notes.hpp` (128-entry
 lookup table with note numbers, sharp-spelled names and equal-tempered frequencies;
-A4 = 440 Hz, MIDI 60 = C4). The current demo's `_note = 1` steps display `C#-1`.
+A4 = 440 Hz, MIDI 60 = C4). Newly enabled empty cells default to C4.
 The sequencer still uses note zero to mean inactive, so MIDI 0 cannot currently
 be played; the lookup table nevertheless includes it. Invalid notes display `????`.
 
@@ -49,7 +52,7 @@ the terminal preserves the pattern.
 
 The TUI is the sole producer; the PortAudio callback is the sole consumer. A
 1024-command `rigtorp::SPSCQueue` is allocated before audio starts. The UI owns a
-pattern copy, and only updates it after non-blocking `try_push` succeeds. A full
+storage bank, and only updates it after non-blocking `try_push` succeeds. A full
 queue rejects the edit and displays a retry message; it never silently drops an
 edit already reflected in the UI. Clear-row is one command, not sixteen edits.
 
@@ -67,12 +70,26 @@ After activation only the audio thread accesses live sequencer state. `inc/seque
 The header shows the sequencer's actual PLAYING/STOPPED state, published by the
 audio callback after processing commands. The lifecycle owner clears it after
 shutdown; the standalone preview stays stopped.
-The UI refreshes status every 50 ms without reading live engine fields. There is
-no pattern/playhead return channel yet; accepted commands may remain pending
-until the next callback.
+The UI refreshes status and polls switch acknowledgements every 50 ms without
+reading live engine fields. There is no playhead return channel yet.
 Quitting stops audio; remaining commands need not be applied. This is an
 in-process thread boundary, not an IPC transport. Adding another producer or
 consumer would violate the SPSC contract.
+
+## Pattern switching
+
+Selection copies the chosen stored pattern into a spare preallocated audio slot.
+After activation is successfully enqueued, the UI immediately displays and edits
+the selected stored pattern. The audio callback switches its current slot before
+rendering, including while transport is stopped. Transport position and existing
+sample tails are preserved.
+
+The header separates displayed PATTERN from the last acknowledged Audio pattern
+and marks a switch pending until completion. A second request is rejected until
+the UI receives acknowledgement returning the retired slot. Selecting the current
+pattern otherwise does nothing. Edit commands carry pattern ID and activation
+generation so stale edits cannot affect a later selection. Deferred switching
+is not implemented; see `doc/specs/pattern-storage-and-switching.md`.
 
 The five sample paths in `src/main.cpp` are absolute; change them to point to
 your files. Samples are not resampled, so use samples matching the output sample

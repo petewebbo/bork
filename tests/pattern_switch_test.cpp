@@ -19,12 +19,21 @@ int main() {
 
     assert(ui.select_pattern(0)); // Same selection is a no-op.
     assert(commands.empty());
-    assert(ui.select_pattern(1));
+    assert(ui.pattern_input('p'));
+    assert(ui.awaiting_pattern_);
+    assert(ui.pattern_input('x') && ui.pattern_input(' ') && ui.pattern_input('q'));
+    assert(ui.pattern_input('9') && ui.awaiting_pattern_ && commands.empty());
+    assert(ui.pattern_input(27));
+    assert(!ui.awaiting_pattern_ && commands.empty());
+    assert(ui.pattern_input('P'));
+    assert(ui.pattern_input('2'));
+    assert(!ui.awaiting_pattern_);
     assert(ui.selected_pattern_ == 1 && ui.playing_pattern_ == 0 && ui.switch_pending_);
     assert(ui.note_number(0, 0) == 72);
     assert(audio.current_pattern()._tracks[0]._steps[0]._note == 60);
-    assert(!ui.select_pattern(2)); // Cannot overwrite submitted slot.
-    assert(ui.selected_pattern_ == 1);
+    assert(ui.pattern_input('p') && ui.pattern_input('3'));
+    assert(!ui.awaiting_pattern_ && ui.message_); // Reject, dismiss popup.
+    assert(ui.selected_pattern_ == 1); // Cannot overwrite submitted slot.
     assert(ui.togglecell()); // Edit new stored pattern before audio adopts it.
     assert(storage[1]._tracks[0]._steps[0]._note == 0);
     assert(storage[0]._tracks[0]._steps[0]._note == 60);

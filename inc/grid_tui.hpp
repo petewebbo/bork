@@ -25,6 +25,21 @@ public:
                 }
         refresh_grid();
     }
+    // Return true when modal input was consumed; caller must not dispatch it
+    // to editing/playback/quit controls underneath the popup.
+    bool pattern_input(int key) {
+        if (!awaiting_pattern_) {
+            if (key != 'p' && key != 'P') return false;
+            awaiting_pattern_ = true;
+            return true;
+        }
+        if (key == 27) awaiting_pattern_ = false;
+        else if (key >= '1' && key <= '8') {
+            awaiting_pattern_ = false;
+            select_pattern(static_cast<size_t>(key - '1'));
+        }
+        return true;
+    }
     bool select_pattern(size_t id) {
         if (switch_pending_) { message_ = "Pattern switch pending - try again"; return false; }
         if (id >= NUM_STORED_PATTERNS) return false;
@@ -101,6 +116,7 @@ public:
     size_t selected_pattern_{};
     size_t playing_pattern_{}; // Last acknowledged selection, independent of play/stop.
     bool switch_pending_{};
+    bool awaiting_pattern_{};
     bool queue_full_{};
     const char* message_{};
 private:
