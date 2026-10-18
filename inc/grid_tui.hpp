@@ -90,6 +90,7 @@ public:
             // One outstanding activation; this ack returns its retired slot.
             if (ack->result == pattern_switch_result::cancelled) {
                 switch_pending_ = false;
+                spare_slot_ = ack->retired_slot;
                 message_ = "Pattern switch cancelled";
             } else if (switch_pending_ && ack->pattern_id == selected_pattern_) {
                 spare_slot_ = ack->retired_slot;

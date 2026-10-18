@@ -81,8 +81,11 @@ struct sequencer {
 
             // request is playing pattern - we cancle pending
             if (command.pattern_id_ == pattern_id_) {
-                patterns_.completed.try_push(pattern_switch_ack{0, 0, pattern_switch_result::cancelled});
+                if (!deferred_next_pattern_.has_value()) break;
+                
+                patterns_.completed.try_push(pattern_switch_ack{deferred_next_pattern_->pattern_id, deferred_next_pattern_->target_slot, pattern_switch_result::cancelled});
                 deferred_next_pattern_.reset();
+                break;
             }
 
             if (command.deferred_ == command_defer::immediate) {
