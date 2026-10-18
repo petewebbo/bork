@@ -19,12 +19,12 @@ namespace bork {
 struct sequencer {
     bool is_playing_ = false;
     transport transport_;
-    pattern_exchange patterns_;
-    uint8_t current_slot_{};
+    pattern_storage patterns_{};
+    pattern_exchange exchange_;
     uint8_t pattern_id_{};
     std::optional<pattern_switch> deferred_next_pattern_;
-    pattern& current_pattern() { return patterns_.slots[current_slot_]; }
-    const pattern& current_pattern() const { return patterns_.slots[current_slot_]; }
+    pattern& current_pattern() { return patterns_[pattern_id_]; }
+    const pattern& current_pattern() const { return patterns_[pattern_id_]; }
     std::array<std::unique_ptr<machine>, MAX_NUM_TRACKS> machines_;
     sequencer() {
         for (auto& m : machines_) {
@@ -37,26 +37,28 @@ struct sequencer {
         // Only this thread consumes. Capture once so later arrivals wait until
         // the next callback; work is bounded by the queue's fixed capacity.
         const size_t count = commands.size();
-        for (size_t i = 0; i < count; ++i) {
+        size_t processed = 0;
+        for (; processed < count; ++processed) {
+            // Leave switches queued rather than lose their acknowledgement.
+            if (commands.front()->type_ == sequencer_command::type::activate_pattern &&
+                exchange_.completed.size() == exchange_.completed.capacity()) break;
             apply_command(*commands.front());
             commands.pop();
         }
-        return count;
+        return processed;
     }
 
     void apply_command(const sequencer_command& command) {
-        if ((command.type_ == sequencer_command::type::set_step ||
-             command.type_ == sequencer_command::type::clear_track) &&
-            command.pattern_id_ != pattern_id_) return;
-        auto& pattern = current_pattern();
+        auto* pattern = command.pattern_id_ < patterns_.size()
+            ? &patterns_[command.pattern_id_] : nullptr;
         switch (command.type_) {
         case sequencer_command::type::set_step:
-            if (command.track_ < pattern.tracks_.size() && command.step_ < MAX_PATTERN_STEPS)
-                pattern.tracks_[command.track_].steps_[command.step_] = command.value_;
+            if (pattern && command.track_ < pattern->tracks_.size() && command.step_ < MAX_PATTERN_STEPS)
+                pattern->tracks_[command.track_].steps_[command.step_] = command.value_;
             break;
         case sequencer_command::type::clear_track:
-            if (command.track_ < pattern.tracks_.size())
-                for (auto& step : pattern.tracks_[command.track_].steps_) step.note_ = 0;
+            if (pattern && command.track_ < pattern->tracks_.size())
+                for (auto& step : pattern->tracks_[command.track_].steps_) step.note_ = 0;
             break;
         case sequencer_command::type::set_tempo:
             if (std::isfinite(command.tempo_) && command.tempo_ >= 20 && command.tempo_ <= 300)
@@ -66,50 +68,38 @@ struct sequencer {
             is_playing_ = !is_playing_;
             break;
         case sequencer_command::type::update_pattern: {
-            const auto* edit = patterns_.edits.front();
+            const auto* edit = exchange_.edits.front();
             assert(edit); // Every marker must have one previously published payload.
             if (!edit) break;
-            if (edit->pattern_id == pattern_id_)
-                pattern = edit->value;
-            // Payloads for other patterns must also be popped to preserve alignment.
-            patterns_.edits.pop();
+            if (edit->pattern_id < patterns_.size())
+                patterns_[edit->pattern_id] = edit->value;
+            exchange_.edits.pop();
             break;
         }
         case sequencer_command::type::activate_pattern: {
-            if (command.slot_ >= patterns_.slots.size() || command.slot_ == current_slot_ ||
-                command.pattern_id_ >= NUM_STORED_PATTERNS) break;
-
-            // request is playing pattern - we cancle pending
+            if (!pattern) break;
             if (command.pattern_id_ == pattern_id_) {
-                if (!deferred_next_pattern_.has_value()) break;
-                
-                patterns_.completed.try_push(pattern_switch_ack{deferred_next_pattern_->pattern_id, deferred_next_pattern_->target_slot, pattern_switch_result::cancelled});
-                deferred_next_pattern_.reset();
-                break;
-            }
-
-            if (command.deferred_ == command_defer::immediate) {
-                switch_pattern(command.slot_, command.pattern_id_);
+                if (exchange_.completed.try_push(pattern_switch_ack{
+                        pattern_id_, pattern_switch_result::cancelled, command.request_id_}))
+                    deferred_next_pattern_.reset();
+            } else if (command.deferred_ == command_defer::immediate) {
+                if (switch_pattern(command.pattern_id_, command.request_id_))
+                    deferred_next_pattern_.reset();
             } else {
-                if (!deferred_next_pattern_.has_value()){
-                    deferred_next_pattern_ = pattern_switch{command.pattern_id_, command.slot_};
-                }
+                deferred_next_pattern_ = pattern_switch{command.pattern_id_, command.request_id_};
             }
             break;
         }
         }
     }
 
-    bool switch_pattern(uint8_t slot, uint8_t pattern_id) {
-        // if for some reason the queue is full, abort
-        if (patterns_.completed.size() == patterns_.completed.capacity()) {
-            return false;
-        }
-        const auto freed_slot = current_slot_;
-        current_slot_ = slot;
+    bool switch_pattern(uint8_t pattern_id, uint64_t request_id) {
+        if (exchange_.completed.size() == exchange_.completed.capacity()) return false;
         pattern_id_ = pattern_id;
-        const pattern_switch_ack ack{pattern_id, freed_slot, pattern_switch_result::switched};
-        patterns_.completed.try_push(ack);
+        const bool published = exchange_.completed.try_push(pattern_switch_ack{
+            pattern_id, pattern_switch_result::switched, request_id});
+        assert(published);
+        (void)published;
         return true;
     }
 
@@ -136,8 +126,8 @@ struct sequencer {
         while (last_sample < num_samples) {
             auto next_step = transport_.track_transport_[track_idx].next_step_;
             // FUDGE
-            if (track_idx == 0 && next_step == 0 && deferred_next_pattern_.has_value()) {
-                switch_pattern(deferred_next_pattern_->target_slot, deferred_next_pattern_->pattern_id);
+            if (track_idx == 0 && next_step == 0 && deferred_next_pattern_ &&
+                switch_pattern(deferred_next_pattern_->pattern_id, deferred_next_pattern_->request_id)) {
                 deferred_next_pattern_.reset();
             }
             auto next_event_sample =

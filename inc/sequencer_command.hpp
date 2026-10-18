@@ -21,8 +21,8 @@ struct sequencer_command {
     step value_{};
     float tempo_{};
     uint8_t pattern_id_{}; // Zero-based stored pattern index.
-    uint8_t slot_{};
     command_defer deferred_ = command_defer::immediate;
+    uint64_t request_id_{}; // Identifies switch outcomes, including repeated pattern IDs.
     
 };
 static_assert(std::is_trivially_copyable_v<sequencer_command>);

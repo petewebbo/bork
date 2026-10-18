@@ -1,70 +1,74 @@
-# Pattern storage and double-buffered switching
+# Audio-owned patterns and deferred switching
 
-Status: implemented. The UI displays the requested pattern immediately on
-successful submission rather than waiting for audio acknowledgement.
+Status: implemented. Successful submission changes the displayed pattern
+immediately; audio owns the complete stored pattern bank.
 
 ## Ownership
 
-- UI owns eight in-memory stored patterns (IDs 1–8), displays and edits them
-  directly. Pattern 1 starts with the startup pattern; 2–8 start empty.
-- Audio renders from one of two preallocated pattern slots. The other slot is
-  UI-writable only while spare. Runtime transport/voices are separate.
-- UI copies a selected stored pattern into the spare, then publishes one
-  activation command. It cannot touch that slot again until audio retires it.
-- Queues and slots outlive callbacks. No audio access to UI storage; no UI reads
-  of audio current. Slot ownership is transferred by SPSC publication.
+- Audio owns all eight stored patterns, the playing pattern ID, and an optional
+  pending selection. Pattern selection never transfers pattern contents.
+- UI keeps a separate display/edit cache, initialised before callbacks start.
+  It is the sole editor and updates its cache only after successful submission.
+- No UI reads or writes of the live audio bank are allowed after activation.
+- Commands, edit payloads, responses and status outlive callbacks.
 
-## Selection and editing
+## Selection
 
-1. Press P, then 1–8. The always-visible top status bar prompts
-   'Select pattern 1–8 / Esc: cancel'. Number selection clears the prompt;
-   Escape cancels without quitting. Other keys cannot edit/control playback
-   while awaiting a number. Poll status/acknowledgements as usual. The bar also
-   displays feedback and stays visible when empty; no popup is used.
-2. Copy storage[N] into the spare slot and enqueue activation with slot index
-   and pattern ID. Queue-full leaves display and
-   selection unchanged and shows a retry message.
-3. On enqueue success, immediately display/edit storage[N]. Show its ID and a
-   separate pending/now-playing indication until audio acknowledges adoption.
-4. At callback entry audio processes its captured command batch in FIFO order,
-   adopts the pending slot by index swap, and acknowledges pattern ID and
-   retired slot. No full-pattern copy occurs in audio.
-5. UI consumes acknowledgement, updates now-playing indication and regains the
-   retired slot as spare. It does not change its displayed selection on ack.
+Press P then 1–8. The permanent top bar prompts for the number; Escape cancels
+number entry. Other keys cannot edit/control playback while awaiting a number.
 
-Every step/clear-track edit carries a pattern ID. UI commits a storage edit only
-after enqueue succeeds. Audio applies it only to the matching current pattern.
-The UI is the sole editor and submits all operations synchronously through one
-FIFO command queue, so activation precedes subsequent edits even across callback
-batches. No activation version counter is needed. If adoption is later deferred,
-pattern IDs can route edits to current/pending; deferred scheduling and
-cancellation are not implemented in this work.
+On selection, enqueue only the pattern ID, deferred/immediate mode and a switch
+request ID. On success, display the selected cached pattern and mark the request
+pending. Queue-full leaves the selection unchanged. Selecting the displayed
+pattern again is a no-op.
 
-Only one switch may be outstanding until acknowledgement is consumed. Reject
-further requests with feedback; never overwrite a submitted slot. Selecting the
-currently selected pattern is a no-op when no request is pending.
+Audio handles requests in FIFO order:
 
-## Playback and completion
+- Different from the playing ID: set or replace the pending selection.
+- Same as the playing ID: clear the pending selection and acknowledge cancellation.
+- At the existing track-0 cycle boundary: activate the latest pending selection
+  and acknowledge the switch. Deferred switching while stopped waits for playback.
+- Immediate requests activate without waiting for the boundary.
 
-- Switch at the next callback that observes activation, including when sequencer
-  playback is stopped. PortAudio callbacks continue while transport is stopped.
-- Preserve transport position and existing sample tails.
-- Dedicated acknowledgement SPSC queue has room for every outstanding request
-  (one). Ownership notifications must never be dropped or block the callback.
-- No synchronous inactive-stream switching path, persistence, musical-boundary
-  scheduling or machine replacement is included.
-- Snapshot queue-depth processing remains unchanged. Pattern-target validation,
-  pointer/index adoption and acknowledgement are bounded, non-allocating work.
+For example: playing A, select B, select C means C replaces B. Selecting A instead
+cancels. No replacement handshake, spare slot, or slot-return response exists.
+Transport and sample tails are not reset.
 
-## Acceptance
+## Editing
 
-- Eight patterns retain independent edits across switches.
-- Display changes on successful submission, not before or on acknowledgement.
-- Audio changes only at callback entry; selection works with transport stopped.
-- Edits after submission affect selected storage/new audio activation, never old
-  audio current. Repeated visits to the same pattern retain FIFO edit ordering.
-- Queue-full does not change display/storage; pending request rejects another.
-- Repeated swaps safely recycle slots and preserve position/tails.
-- Status-bar input handles numbers/cancellation, blocks editing while awaiting
-  a number, and survives resize. The top bar remains visible when empty.
-- Idle UI polls acknowledgements; shutdown with a pending request is safe.
+Every step edit, row clear and full-pattern edit carries its target pattern ID.
+Audio applies it to that stored pattern whether it is playing, pending or neither.
+Replacing or cancelling a pending selection does not discard its edits.
+
+Bulk edits retain their four-entry payload queue plus ordered command marker.
+Every marker consumes one payload. Invalid pattern IDs are discarded safely.
+Single and bulk edits preserve ordering with selection commands.
+
+## Responses
+
+A response contains the actual playing pattern ID, switched/cancelled result,
+and the request ID responsible for that outcome. Superseded pending selections
+need no response because they transfer no ownership.
+
+The UI always updates its playing indicator from a response, but only clears
+pending state when the response matches its latest submitted request ID. This
+also handles B -> C -> B and a boundary activation racing with cancellation.
+Acknowledgement does not change the displayed selection.
+
+The response queue is bounded and non-blocking. If full, command processing
+stops before the next activation command without popping it. Ordinary edits can
+continue until that command. The UI drains responses during its regular refresh.
+An unsuccessful boundary acknowledgement leaves the pending selection intact.
+No command or completion is silently discarded because the response queue is full.
+
+## Checks
+
+- Independent pattern contents survive activation, replacement and cancellation.
+- Pending patterns accept step edits, row clears, bulk toggles and paste.
+- A -> pending B -> pending C activates C; selecting A cancels instead.
+- Acknowledging an older selection cannot clear the latest request.
+- Selection failure leaves UI state unchanged; response backpressure retains commands.
+- Tests cover immediate activation, deferred activation and repeated cancellation.
+
+No persistence, machine replacement, new pattern-length policy, or transport
+scheduling changes are included.

@@ -18,9 +18,14 @@ are ownership, coherent edits and bounded real-time work.
 
 ## Separate three kinds of state
 
-### Editable project state
+### Editable state and the stored pattern bank
 
-The application/UI thread owns the authoritative editable model:
+The audio engine owns the complete eight-pattern bank, including patterns that
+are not playing. Selection commands carry IDs only; a new ID replaces the pending
+selection, and selecting the playing ID cancels it. All pattern edits target the
+named stored pattern, not just the current one.
+
+The application/UI thread keeps a separate display/edit cache and prepares edits:
 
 - Patterns and steps.
 - Track machine selection.
@@ -29,11 +34,10 @@ The application/UI thread owns the authoritative editable model:
 - Sample selection and other configuration.
 
 This thread can allocate, save/load files, support undo and prepare larger edits.
-The audio engine maintains its own renderable representation, updated through
-commands. The UI does not need to read the audio representation back to display
-values it already knows.
-
-The current UI pattern copy is the starting point for this project model.
+It updates its cache only after successful command submission. The UI is the sole
+editor, so it does not need to read mutable audio patterns back to display values
+it already knows. Future engine-generated pattern changes would need an explicit
+cache-update path.
 
 ### Audio runtime state
 
@@ -77,15 +81,18 @@ The current transport is a fixed-capacity rigtorp/SPSCQueue:
 - The TUI/application thread is the sole producer.
 - The PortAudio callback is the sole consumer.
 - The queue is allocated before audio activation and outlives audio shutdown.
-- The UI snapshots the initial pattern before audio starts.
+- Switch responses carry a request ID, so older outcomes cannot clear newer UI
+  pending state. They report playback changes, not pattern-slot ownership.
+- The UI snapshots the initial pattern bank before audio starts.
 - The UI uses non-blocking enqueue and updates its model only after success.
 - A full queue rejects the edit and provides user feedback rather than silently
   dropping an edit already shown in the UI.
 - Commands carry explicit desired values, not relative toggle operations.
 
 At callback entry, the engine currently reads the queue depth once and processes
-that many commands before rendering any tracks. Later arrivals wait for a future
-callback. Work is bounded by the fixed queue capacity, currently 1024 messages.
+up to that many commands before rendering any tracks. Later arrivals wait for a
+future callback. A full switch-response queue stops consumption before the next
+activation command; it remains queued until the UI drains responses. Work is bounded by the fixed queue capacity, currently 1024 messages.
 This is a concurrent depth observation, not a synchronised wall-clock snapshot.
 
 As commands become more varied, revisit this processing policy: message count

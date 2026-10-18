@@ -7,8 +7,17 @@ struct fixture {
     bork::sequencer audio;
     bork::pattern_storage storage{};
     bork::command_queue commands{32};
-    bork::GridWidget ui{storage, commands, audio.patterns_};
-    void flush() { audio.process_commands(commands); ui.poll_notifications(); }
+    bork::GridWidget ui{storage, commands, audio.exchange_};
+    void flush() {
+        audio.process_commands(commands);
+        // Clipboard tests explicitly finish selection; boundary timing is tested separately.
+        if (audio.deferred_next_pattern_) {
+            const auto pending = *audio.deferred_next_pattern_;
+            audio.apply_command({.type_ = bork::sequencer_command::type::activate_pattern,
+                                 .pattern_id_ = pending.pattern_id, .request_id_ = pending.request_id});
+        }
+        ui.poll_notifications();
+    }
 };
 
 int main() {

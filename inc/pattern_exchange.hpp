@@ -3,32 +3,26 @@
 #include "pattern.hpp"
 #include "pattern_edit.hpp"
 #include <rigtorp/SPSCQueue.h>
-#include <array>
 #include <cstdint>
 
 namespace bork {
-inline constexpr size_t NUM_STORED_PATTERNS = 8;
-using pattern_storage = std::array<pattern, NUM_STORED_PATTERNS>;
-
 enum class pattern_switch_result {
     switched,
     cancelled  
 };
 struct pattern_switch {
     uint8_t pattern_id{};
-    uint8_t target_slot{};
+    uint64_t request_id{};
 };
 
 struct pattern_switch_ack {
     uint8_t pattern_id{};
-    uint8_t retired_slot{};
     pattern_switch_result result{};
+    uint64_t request_id{};
 };
 
-// Slot 0 starts audio-owned, slot 1 UI-owned. Submission publishes ownership;
-// acknowledgement returns the retired slot. Neither thread touches the other's slot.
+// Cross-thread messages only. The pattern bank belongs exclusively to audio.
 struct pattern_exchange {
-    std::array<pattern, 2> slots{};
     rigtorp::SPSCQueue<pattern_switch_ack> completed{1};
 
     // Payloads are consumed only by matching update_pattern command markers.

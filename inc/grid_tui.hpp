@@ -68,34 +68,30 @@ public:
         return true;
     }
     bool select_pattern(size_t id) {
-        // if (switch_pending_) { message_ = "Pattern switch pending - try again"; return false; }
         if (id >= NUM_STORED_PATTERNS) return false;
         if (id == selected_pattern_) { message_ = nullptr; return true; }
-        exchange_.slots[spare_slot_] = storage_[id];
         const sequencer_command command{
             .type_ = sequencer_command::type::activate_pattern,
             .pattern_id_ = static_cast<uint8_t>(id),
-            .slot_ = spare_slot_,
-            .deferred_ = command_defer::deferred
+            .deferred_ = command_defer::deferred,
+            .request_id_ = switch_request_ + 1
         };
         if (!enqueue(command)) return false;
+        ++switch_request_;
         selected_pattern_ = id;
         switch_pending_ = true;
         selection_.reset();
-        refresh_grid(); // Display immediately; audio catches up at callback entry.
+        refresh_grid(); // Display immediately; audio owns its own complete pattern bank.
         return true;
     }
     void poll_notifications() {
-        if (const auto* ack = exchange_.completed.front()) {
-            // One outstanding activation; this ack returns its retired slot.
-            if (ack->result == pattern_switch_result::cancelled) {
+        while (const auto* ack = exchange_.completed.front()) {
+            playing_pattern_ = ack->pattern_id;
+            // Older outcomes still update playback, but cannot finish a newer request.
+            if (ack->request_id == switch_request_) {
                 switch_pending_ = false;
-                spare_slot_ = ack->retired_slot;
-                message_ = "Pattern switch cancelled";
-            } else if (switch_pending_ && ack->pattern_id == selected_pattern_) {
-                spare_slot_ = ack->retired_slot;
-                playing_pattern_ = ack->pattern_id;
-                switch_pending_ = false;
+                message_ = ack->result == pattern_switch_result::cancelled
+                    ? "Pattern switch cancelled" : nullptr;
             }
             exchange_.completed.pop();
         }
@@ -237,7 +233,7 @@ private:
     pattern_storage& storage_;
     command_queue& commands_;
     pattern_exchange& exchange_;
-    uint8_t spare_slot_{1};
+    uint64_t switch_request_{};
     grid_selection selection_;
     enum class clipboard_type { empty, selection, pattern };
     clipboard_type clipboard_type_{clipboard_type::empty};

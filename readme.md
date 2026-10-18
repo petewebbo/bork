@@ -26,9 +26,9 @@ stream. The mono sequencer mix is sent to every output channel.
 
 The main application displays a five-track, sixteen-step ncurses grid: Kick,
 Snare, Clap, HH and Open HH. It needs a 90 × 15 terminal. The initial grid reads
-an eight-pattern UI-owned storage bank, initialised before audio starts. Pattern 1
-contains the startup pattern; patterns 2–8 start empty. Edits go through an SPSC
-command queue rather than accessing live audio state.
+a UI-side display cache, initialised from the audio-owned eight-pattern bank
+before audio starts. Pattern 1 contains the startup pattern; patterns 2–8 start
+empty. Edits go through an SPSC command queue rather than accessing live audio state.
 
 - Click a cell to select/toggle it; **x** toggles every selected cell independently.
 - **Space** toggles sequencer playback through the command queue.
@@ -81,8 +81,10 @@ queue rejects the edit and displays a retry message; it never silently drops an
 edit already reflected in the UI. Clear-row is one command, not sixteen edits.
 
 At the start of each audio callback, before rendering any tracks, the sequencer
-reads the queue depth once and consumes that many commands using `front`/`pop`.
-Commands arriving after that observation wait until the next callback. Work is
+reads the queue depth once and consumes up to that many commands using `front`/`pop`.
+Commands arriving after that observation wait until the next callback. If the
+switch-response queue is full, processing stops before the next switch command;
+that command and everything after it remain queued until the UI drains responses. Work is
 bounded by the 1024-command capacity, not a smaller per-block cap; a full backlog
 can therefore take more callback time. Handlers perform bounded work
 with no allocation, locking or logging. Commands are explicit `set_step`,
@@ -91,7 +93,7 @@ exposed in the UI). Indices and tempo values are validated by the consumer.
 The queue outlives the audio client, including exception-path shutdown.
 
 Paste, multi-cell toggle and multi-cell clear use a separate four-entry pattern
-payload SPSC queue, not the pattern-switch spare. Each payload contains the
+payload SPSC queue. Each payload contains the
 complete resulting pattern and its pattern ID. The sole producer
 first checks both queues have space, publishes the payload, then publishes an
 `update_pattern` marker in the regular command queue. Consumer activity can only
@@ -99,7 +101,8 @@ free space between those checks and pushes; submission must not be reentrant.
 
 Audio consumes one payload only when it encounters its command marker, preserving
 ordering with activation and single-step edits. It copies matching payloads into
-the current pattern and pops every payload, including ones targeting other patterns. Queue pop
+the named stored pattern, whether playing, pending or neither. Invalid pattern
+IDs are discarded, but every payload is popped. Queue pop
 handles memory reuse: no edit-slot bookkeeping or edit-completion queue exists.
 UI storage changes only after successful submission. If either queue is full,
 the entire edit is rejected before publishing anything.
@@ -132,19 +135,23 @@ consumer would violate the SPSC contract.
 
 ## Pattern switching
 
-Selection copies the chosen stored pattern into a spare preallocated audio slot.
-After activation is successfully enqueued, the UI immediately displays and edits
-the selected stored pattern. The audio callback switches its current slot before
-rendering, including while transport is stopped. Transport position and existing
-sample tails are preserved.
+Audio owns all eight stored patterns. Selecting a pattern sends only its ID;
+the UI immediately displays and edits its cached copy after successful enqueue.
+There are no shared writable pattern slots and no pattern transfers for selection.
+Edits target the named stored pattern even when it is not playing.
+
+While A plays, selecting B queues B; selecting C replaces the pending selection
+with C; selecting A cancels the pending switch. Deferred activation follows the
+existing track-0 cycle-boundary rule. While transport is stopped it waits for
+playback to resume. Transport position and existing sample tails are preserved.
+Immediate activation remains available through the command protocol.
 
 The header separates displayed PATTERN from the last acknowledged Audio pattern
-and marks a switch pending until completion. A second request is rejected until
-the UI receives acknowledgement returning the retired slot. Selecting the current
-pattern otherwise does nothing. Edit commands carry pattern IDs. The UI is the
-sole editor and activation/edit commands share strict FIFO ordering, including
-when revisiting a pattern; no activation version counter is needed. Deferred
-switching and cancellation are not implemented; see `doc/specs/pattern-storage-and-switching.md`.
+and marks the latest request pending until completion. Responses report the actual
+playing pattern and switched/cancelled outcome. Each selection has a request ID,
+so older responses update the playing indicator without clearing newer pending
+requests, including repeated selections of the same pattern. Responses no longer
+return slots. See `doc/specs/pattern-storage-and-switching.md`.
 
 The five sample paths in `src/main.cpp` are absolute; change them to point to
 your files. Samples are not resampled, so use samples matching the output sample

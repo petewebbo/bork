@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
 #include <bork_defines.hpp>
 
 namespace bork {
@@ -20,5 +21,8 @@ struct track {
 struct pattern {
     std::array<track, 8> tracks_;
 };
+
+inline constexpr std::size_t NUM_STORED_PATTERNS = 8;
+using pattern_storage = std::array<pattern, NUM_STORED_PATTERNS>;
 
 }

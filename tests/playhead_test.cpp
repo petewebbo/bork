@@ -35,7 +35,7 @@ int main() {
     render(32);
     assert(status.current_step(0, 0, true) == 5); // Resume, not restart.
     audio.apply_command({.type_ = bork::sequencer_command::type::activate_pattern,
-                         .pattern_id_ = 1, .slot_ = 1});
+                         .pattern_id_ = 1});
     audio.publish_status(status, 2);
     assert(status.current_step(0, 0, true) == bork::NO_CURRENT_STEP);
     assert(status.current_step(0, 1, true) == 5);

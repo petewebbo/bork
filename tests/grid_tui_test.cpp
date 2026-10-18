@@ -10,16 +10,16 @@
 int main() {
     {
         bork::sequencer switching{};
-        switching.patterns_.slots[1].tracks_[0].steps_[0] = {.note_ = 72, .vel_ = 90};
+        switching.patterns_[1].tracks_[0].steps_[0] = {.note_ = 72, .vel_ = 90};
         switching.transport_.track_transport_[0].next_step_ = 7;
         switching.apply_command({.type_ = bork::sequencer_command::type::activate_pattern,
-                                 .pattern_id_ = 1, .slot_ = 1});
-        assert(switching.current_slot_ == 1 && !switching.is_playing_);
+                                 .pattern_id_ = 1});
+        assert(switching.pattern_id_ == 1 && !switching.is_playing_);
         assert(switching.current_pattern().tracks_[0].steps_[0].note_ == 72);
         assert(switching.transport_.track_transport_[0].next_step_ == 7);
-        const auto* ack = switching.patterns_.completed.front();
-        assert(ack && ack->retired_slot == 0 && ack->pattern_id == 1);
-        switching.patterns_.completed.pop();
+        const auto* ack = switching.exchange_.completed.front();
+        assert(ack && ack->pattern_id == 1 && ack->result == bork::pattern_switch_result::switched);
+        switching.exchange_.completed.pop();
         switching.apply_command({.type_ = bork::sequencer_command::type::set_step,
                                  .value_ = {.note_ = 1}}); // Different pattern.
         assert(switching.current_pattern().tracks_[0].steps_[0].note_ == 72);
@@ -48,7 +48,7 @@ int main() {
         bork::command_queue queue(8);
         bork::pattern_storage stored{};
         stored[0] = pitched_pattern;
-        bork::GridWidget ui(stored, queue, pitched.patterns_);
+        bork::GridWidget ui(stored, queue, pitched.exchange_);
         assert(ui.note_number(0, 0) == 61);
         assert(ui.togglecell());
         assert(ui.note_number(0, 0) == 0);
@@ -68,7 +68,7 @@ int main() {
     bork::command_queue commands(bork::COMMAND_QUEUE_CAPACITY);
     bork::pattern_storage storage{};
     storage[0] = pattern;
-    bork::GridWidget widget(storage, commands, engine.patterns_);
+    bork::GridWidget widget(storage, commands, engine.exchange_);
     assert(!engine.is_playing_);
     assert(widget.toggleplay());
     assert(engine.process_commands(commands) == 1);

@@ -7,7 +7,7 @@ clears the selection, or the current row when no multi-cell selection exists.
 ## Scope
 
 Add rectangular grid selection and an internal application clipboard. Copy/paste
-operates on the UI-owned pattern storage and sends accepted changes through the
+operates on the UI's display/edit cache and sends accepted changes through the
 existing command queue. No system clipboard integration or cross-process data.
 
 ## Selection
@@ -113,8 +113,8 @@ pattern switches and remains reusable after paste.
   pattern ID; never read UI storage from the callback. The UI is the sole editor
   and FIFO command ordering defines when each edit is applied.
 - If a switch is pending, paste targets the newly displayed/requested pattern,
-  not the last acknowledged audio pattern. FIFO ordering preserves activation
-  before its subsequent edits.
+  not the last acknowledged audio pattern. Edits update the named audio-owned
+  stored pattern, without waiting for activation.
 - Apply a paste coherently at a callback boundary: do not let a large paste be
   partly applied in different callbacks or partly committed on queue-full.
 - Use a four-entry SPSC pattern-payload queue rather than many individual step
@@ -122,15 +122,16 @@ pattern switches and remains reusable after paste.
   space, then publishes the complete pattern/ID payload followed by
   an `update_pattern` command marker. No reentrant submission or second producer.
   A full queue rejects the whole edit before either publication.
-- Audio consumes one payload per marker, applies matching pattern IDs, and pops even
-  nonmatching payloads to keep the queues aligned. Never drain payloads independently.
+- Audio consumes one payload per marker and updates the named stored pattern,
+  whether playing or not. Invalid IDs are discarded but still popped to keep
+  the queues aligned. Never drain payloads independently.
   Queue storage is reused by pop; no edit slots or completion queue are needed.
 - Commit the UI storage update only after successful batch submission. Report
   failure with a retry message. Clipboard and selection survive failed paste.
 - Audio batch application must be bounded and allocation-free. For current small
   fixed-size patterns, a prepared fixed-capacity batch/full-pattern copy is
-  acceptable; document and measure its callback cost. Do not reuse the pattern
-  switch spare slot while it is submitted/audio-owned.
+  acceptable; document and measure its callback cost. Selection itself sends
+  only a pattern ID, never a pattern payload.
 - Copy and selection movement require no audio commands.
 
 ## Confirmed decisions

@@ -77,12 +77,11 @@ int main() try {
     static_cast<bork::sampler*>(sequencer.machines_[4].get())->audio_file_.load("/Users/petewebbo/code/bork/samples/tapetonic/Tonic_HHo_B_T1A.wav");
 
 
-    // Storage belongs only to the UI. Audio starts with a separate copy of pattern 1.
+    // Initialise the UI's display cache before audio takes exclusive ownership.
     // Storage, exchange and queues all outlive callbacks, including on exceptions.
-    bork::pattern_storage storage{};
-    storage[0] = sequencer.current_pattern();
+    bork::pattern_storage storage = sequencer.patterns_;
     bork::command_queue commands(bork::COMMAND_QUEUE_CAPACITY);
-    bork::GridWidget widget(storage, commands, sequencer.patterns_);
+    bork::GridWidget widget(storage, commands, sequencer.exchange_);
     bork::sequencer_status status;
     audio_client<float> audio("bork", commands, status);
     audio.init(0, 2); // Default output device; no microphone/input required.
