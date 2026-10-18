@@ -8,6 +8,11 @@
 
 namespace bork {
 
+enum class command_defer {
+    deferred,
+    immediate    
+};
+
 struct sequencer_command {
     enum class type : uint8_t { set_step, clear_track, set_tempo, toggle_play, activate_pattern, update_pattern };
     type type_{};
@@ -17,6 +22,8 @@ struct sequencer_command {
     float tempo_{};
     uint8_t pattern_id_{}; // Zero-based stored pattern index.
     uint8_t slot_{};
+    command_defer deferred_ = command_defer::immediate;
+    
 };
 static_assert(std::is_trivially_copyable_v<sequencer_command>);
 static_assert(std::atomic<size_t>::is_always_lock_free);

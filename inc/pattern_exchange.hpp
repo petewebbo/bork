@@ -10,16 +10,26 @@ namespace bork {
 inline constexpr size_t NUM_STORED_PATTERNS = 8;
 using pattern_storage = std::array<pattern, NUM_STORED_PATTERNS>;
 
-struct pattern_switched {
+enum class pattern_switch_result {
+    switched,
+    cancelled  
+};
+struct pattern_switch {
+    uint8_t pattern_id{};
+    uint8_t target_slot{};
+};
+
+struct pattern_switch_ack {
     uint8_t pattern_id{};
     uint8_t retired_slot{};
+    pattern_switch_result result{};
 };
 
 // Slot 0 starts audio-owned, slot 1 UI-owned. Submission publishes ownership;
 // acknowledgement returns the retired slot. Neither thread touches the other's slot.
 struct pattern_exchange {
     std::array<pattern, 2> slots{};
-    rigtorp::SPSCQueue<pattern_switched> completed{1};
+    rigtorp::SPSCQueue<pattern_switch_ack> completed{1};
 
     // Payloads are consumed only by matching update_pattern command markers.
     // Queue pop handles storage reuse; there is no edit completion channel.
