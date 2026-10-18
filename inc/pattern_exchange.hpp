@@ -10,9 +10,15 @@ namespace bork {
 inline constexpr size_t NUM_STORED_PATTERNS = 8;
 using pattern_storage = std::array<pattern, NUM_STORED_PATTERNS>;
 
+enum class pattern_switch_result {
+    switched,
+    cancelled  
+};
+
 struct pattern_switched {
     uint8_t pattern_id{};
     uint8_t retired_slot{};
+    pattern_switch_result result{};
 };
 
 // Slot 0 starts audio-owned, slot 1 UI-owned. Submission publishes ownership;

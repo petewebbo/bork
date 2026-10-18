@@ -77,7 +77,7 @@ struct sequencer {
         case sequencer_command::type::activate_pattern: {
             if (command.slot_ >= patterns_.slots.size() || command.slot_ == current_slot_ ||
                 command.pattern_id_ >= NUM_STORED_PATTERNS) break;
-            const pattern_switched ack{command.pattern_id_, current_slot_};
+            const pattern_switched ack{command.pattern_id_, current_slot_, pattern_switch_result::switched};
             // Only this thread produces acknowledgements; the UI can only
             // free space. A valid single outstanding request always has room.
             if (patterns_.completed.size() == patterns_.completed.capacity()) break;
