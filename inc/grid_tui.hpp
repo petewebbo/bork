@@ -68,7 +68,7 @@ public:
         return true;
     }
     bool select_pattern(size_t id) {
-        if (switch_pending_) { message_ = "Pattern switch pending - try again"; return false; }
+        // if (switch_pending_) { message_ = "Pattern switch pending - try again"; return false; }
         if (id >= NUM_STORED_PATTERNS) return false;
         if (id == selected_pattern_) { message_ = nullptr; return true; }
         exchange_.slots[spare_slot_] = storage_[id];
@@ -76,6 +76,7 @@ public:
             .type_ = sequencer_command::type::activate_pattern,
             .pattern_id_ = static_cast<uint8_t>(id),
             .slot_ = spare_slot_,
+            .deferred_ = command_defer::deferred
         };
         if (!enqueue(command)) return false;
         selected_pattern_ = id;
@@ -87,7 +88,10 @@ public:
     void poll_notifications() {
         if (const auto* ack = exchange_.completed.front()) {
             // One outstanding activation; this ack returns its retired slot.
-            if (switch_pending_ && ack->pattern_id == selected_pattern_) {
+            if (ack->result == pattern_switch_result::cancelled) {
+                switch_pending_ = false;
+                message_ = "Pattern switch cancelled";
+            } else if (switch_pending_ && ack->pattern_id == selected_pattern_) {
                 spare_slot_ = ack->retired_slot;
                 playing_pattern_ = ack->pattern_id;
                 switch_pending_ = false;

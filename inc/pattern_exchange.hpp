@@ -14,8 +14,12 @@ enum class pattern_switch_result {
     switched,
     cancelled  
 };
+struct pattern_switch {
+    uint8_t pattern_id{};
+    uint8_t target_slot{};
+};
 
-struct pattern_switched {
+struct pattern_switch_ack {
     uint8_t pattern_id{};
     uint8_t retired_slot{};
     pattern_switch_result result{};
@@ -25,7 +29,7 @@ struct pattern_switched {
 // acknowledgement returns the retired slot. Neither thread touches the other's slot.
 struct pattern_exchange {
     std::array<pattern, 2> slots{};
-    rigtorp::SPSCQueue<pattern_switched> completed{1};
+    rigtorp::SPSCQueue<pattern_switch_ack> completed{1};
 
     // Payloads are consumed only by matching update_pattern command markers.
     // Queue pop handles storage reuse; there is no edit completion channel.

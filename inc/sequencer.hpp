@@ -12,6 +12,7 @@
 #include <array>
 #include <cstdint>
 #include <span>
+#include <optional>
 
 namespace bork {
 
@@ -21,10 +22,10 @@ struct sequencer {
     pattern_exchange patterns_;
     uint8_t current_slot_{};
     uint8_t pattern_id_{};
+    std::optional<pattern_switch> deferred_next_pattern_;
     pattern& current_pattern() { return patterns_.slots[current_slot_]; }
     const pattern& current_pattern() const { return patterns_.slots[current_slot_]; }
     std::array<std::unique_ptr<machine>, MAX_NUM_TRACKS> machines_;
-
     sequencer() {
         for (auto& m : machines_) {
             m = std::make_unique<sampler>();
@@ -77,17 +78,36 @@ struct sequencer {
         case sequencer_command::type::activate_pattern: {
             if (command.slot_ >= patterns_.slots.size() || command.slot_ == current_slot_ ||
                 command.pattern_id_ >= NUM_STORED_PATTERNS) break;
-            const pattern_switched ack{command.pattern_id_, current_slot_, pattern_switch_result::switched};
-            // Only this thread produces acknowledgements; the UI can only
-            // free space. A valid single outstanding request always has room.
-            if (patterns_.completed.size() == patterns_.completed.capacity()) break;
-            current_slot_ = command.slot_;
-            pattern_id_ = command.pattern_id_;
-            const bool published = patterns_.completed.try_push(ack);
-            (void)published; // Guaranteed by the ownership/producer contract.
+
+            // request is playing pattern - we cancle pending
+            if (command.pattern_id_ == pattern_id_) {
+                patterns_.completed.try_push(pattern_switch_ack{0, 0, pattern_switch_result::cancelled});
+                deferred_next_pattern_.reset();
+            }
+
+            if (command.deferred_ == command_defer::immediate) {
+                switch_pattern(command.slot_, command.pattern_id_);
+            } else {
+                if (!deferred_next_pattern_.has_value()){
+                    deferred_next_pattern_ = pattern_switch{command.pattern_id_, command.slot_};
+                }
+            }
             break;
         }
         }
+    }
+
+    bool switch_pattern(uint8_t slot, uint8_t pattern_id) {
+        // if for some reason the queue is full, abort
+        if (patterns_.completed.size() == patterns_.completed.capacity()) {
+            return false;
+        }
+        const auto freed_slot = current_slot_;
+        current_slot_ = slot;
+        pattern_id_ = pattern_id;
+        const pattern_switch_ack ack{pattern_id, freed_slot, pattern_switch_result::switched};
+        patterns_.completed.try_push(ack);
+        return true;
     }
 
     // Call once after rendering the entire device block, not each scratch chunk.
@@ -112,6 +132,11 @@ struct sequencer {
 
         while (last_sample < num_samples) {
             auto next_step = transport_.track_transport_[track_idx].next_step_;
+            // FUDGE
+            if (track_idx == 0 && next_step == 0 && deferred_next_pattern_.has_value()) {
+                switch_pattern(deferred_next_pattern_->target_slot, deferred_next_pattern_->pattern_id);
+                deferred_next_pattern_.reset();
+            }
             auto next_event_sample =
                 transport_.track_transport_[track_idx].get_next_step_sample(num_samples);
             last_sample = next_event_sample;
