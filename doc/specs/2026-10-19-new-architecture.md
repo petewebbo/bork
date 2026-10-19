@@ -153,8 +153,9 @@ future machines must obey the same lifetime rule or explicitly retain resources.
 
 ## Combined store-to-audio queue
 
-Use one bounded SPSC FIFO. Store is the only producer; audio the only consumer.
-UI does not publish directly to it.
+Use one capacity-64 SPSC FIFO. Store is the only producer; audio the only consumer.
+UI does not publish directly to it. Its entries contain controls or snapshot
+references, not inline pattern copies.
 
 Conceptual messages:
 
@@ -343,16 +344,35 @@ Use two separate SPSC channels from audio to store:
   Each can have at most one outstanding release record: the store must consume
   that record before reusing and publishing the buffer again. This bounds release
   records independently of control traffic.
-- **Reliable control outcomes:** a separate bounded queue for switched, cancelled,
-  superseded and other required control results. Capacity remains to be confirmed.
+- **Reliable control outcomes: capacity 64.** A separate queue for switched,
+  cancelled, superseded and other required control results.
 
 Audio is the sole producer and store the sole consumer of both channels. A control
 outcome backlog cannot occupy snapshot-release capacity. Store drains both channels
 independently of UI response delivery.
 
-Records contain identifiers/references, not owning pattern objects. Reserve final
-response capacity before submitting each control so audio never waits or drops
-its result. The exact control-credit limit remains to be confirmed.
+Records contain identifiers/references, not owning pattern objects.
+
+### Control-result credits
+
+Allow at most 64 outstanding controls requiring a result, including queued controls
+and a pending selection. Reserve one final-result credit before successful control
+submission. A pending selection retains its credit until switched, cancelled or
+superseded. Each such control produces exactly one final outcome.
+
+Replacing/cancelling a pending selection can complete the older request as well
+as the newer control; each has its own already-reserved credit. Snapshot-only
+updates consume no control-result credit; their releases use the capacity-3 channel.
+
+When queue capacity or credits are exhausted, retain/retry unsent work rather than
+blocking audio or discarding results. Failed enqueue does not consume a credit.
+A credit remains outstanding until the store has safely handled its final outcome;
+if onward delivery is blocked, do not replenish credits while accumulating an
+unbounded store-side result backlog. UI-facing delivery details remain open.
+
+The capacity-64 outcome queue can therefore hold one final outcome for every
+outstanding control. A deferred boundary completion does not depend on a timely
+UI poll. These are message limits, not additional pattern allocations.
 
 - No buffer release may be dropped or overwritten.
 - Return capacity must cover accepted work, including releases caused by pending
@@ -365,8 +385,9 @@ its result. The exact control-credit limit remains to be confirmed.
 
 Reliable edit/control results are not disposable. Intermediate playheads/meters
 may be skipped. Obsolete UI snapshots may be coalesced, with storage reclaimed
-outside audio. Remaining command/UI/outcome capacities and control reservation
-accounting are open; release-channel separation and capacity 3 are agreed.
+outside audio. The combined queue and outcome queue are capacity 64, with 64
+control-result credits. UI request/response capacities and onward result-delivery
+accounting remain open; release-channel separation and capacity 3 are agreed.
 
 The callback must not allocate, lock, wait, perform file I/O, log or destroy
 pattern storage. Its queue messages are small and trivially destructible.
@@ -427,9 +448,10 @@ reference/queue work separately from store copying and wake-up latency.
 
 ## Open decisions — discuss before implementing
 
-1. **Remaining capacities and control credits.** Set combined command, UI request/
-   response and reliable control-outcome capacities and response reservation limits.
-   Snapshot releases already have their own capacity-3 queue; that is settled.
+1. **UI-facing capacities and delivery.** Set UI request/response capacities and
+   bounded handling of results/snapshots when UI delivery is blocked. Combined
+   audio commands and control outcomes are capacity 64, with 64 result credits;
+   snapshot releases have their own capacity-3 queue. Those limits are settled.
 2. **Store scheduling with an exhausted pool.** Specify how unsent selections,
    playing/pending dirty updates and later controls are staged and ordered. Define
    handling of newer selections before an older one could acquire a buffer, and
