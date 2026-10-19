@@ -337,8 +337,22 @@ Recovery depends only on the UI/store exchange, never on an audio callback.
 
 ## Reliable returns and capacity
 
-Audio returns exact snapshot releases and reliable control outcomes. These records
-contain identifiers/references, not owning pattern objects.
+Use two separate SPSC channels from audio to store:
+
+- **Snapshot releases: capacity 3.** There are exactly three snapshot allocations.
+  Each can have at most one outstanding release record: the store must consume
+  that record before reusing and publishing the buffer again. This bounds release
+  records independently of control traffic.
+- **Reliable control outcomes:** a separate bounded queue for switched, cancelled,
+  superseded and other required control results. Capacity remains to be confirmed.
+
+Audio is the sole producer and store the sole consumer of both channels. A control
+outcome backlog cannot occupy snapshot-release capacity. Store drains both channels
+independently of UI response delivery.
+
+Records contain identifiers/references, not owning pattern objects. Reserve final
+response capacity before submitting each control so audio never waits or drops
+its result. The exact control-credit limit remains to be confirmed.
 
 - No buffer release may be dropped or overwritten.
 - Return capacity must cover accepted work, including releases caused by pending
@@ -351,7 +365,8 @@ contain identifiers/references, not owning pattern objects.
 
 Reliable edit/control results are not disposable. Intermediate playheads/meters
 may be skipped. Obsolete UI snapshots may be coalesced, with storage reclaimed
-outside audio. Channel layout, capacities and reservation accounting remain open.
+outside audio. Remaining command/UI/outcome capacities and control reservation
+accounting are open; release-channel separation and capacity 3 are agreed.
 
 The callback must not allocate, lock, wait, perform file I/O, log or destroy
 pattern storage. Its queue messages are small and trivially destructible.
@@ -412,9 +427,9 @@ reference/queue work separately from store copying and wake-up latency.
 
 ## Open decisions — discuss before implementing
 
-1. **Reliable channel layout and capacities.** Set combined command, UI request/
-   response and audio return capacities, plus accounting for guaranteed releases
-   and deferred control outcomes.
+1. **Remaining capacities and control credits.** Set combined command, UI request/
+   response and reliable control-outcome capacities and response reservation limits.
+   Snapshot releases already have their own capacity-3 queue; that is settled.
 2. **Store scheduling with an exhausted pool.** Specify how unsent selections,
    playing/pending dirty updates and later controls are staged and ordered. Define
    handling of newer selections before an older one could acquire a buffer, and
@@ -427,7 +442,8 @@ reference/queue work separately from store copying and wake-up latency.
 
 The combined FIFO, exactly three snapshots total in addition to eight originals,
 current/optional-pending audio references, full copies outside audio, optimistic
-UI, FIFO-barrier rejection recovery and timed wake-up are settled. There is no minimum-revision deadline decision
+UI, FIFO-barrier rejection recovery, a separate capacity-3 snapshot-release queue,
+and timed wake-up are settled. There is no minimum-revision deadline decision
 and no separate publication queue: those were superseded by the agreed model.
 
 ## Future remote UI and limits
