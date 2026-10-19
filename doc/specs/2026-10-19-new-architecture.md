@@ -311,8 +311,29 @@ Optimistic editing:
 Bulk operations are coherent and prepared outside audio. Cancelled or replaced
 selections do not discard their stored edits.
 
-Rejected edits require an error and authoritative resynchronisation that preserves
-later valid optimistic edits. The concrete protocol is the next open decision.
+### Rejected optimistic edits: resynchronisation barrier
+
+Use a FIFO resynchronisation barrier, not an edit-replay journal.
+
+1. Store reports the rejected edit with its pattern and request IDs.
+2. If it affects the current editing copy, UI temporarily pauses edits to that
+   pattern and queues a resync request after its already-submitted edits.
+3. Store processes preceding requests in order, applying valid edits and rejecting
+   invalid ones, then serves an authoritative snapshot when it reaches the barrier.
+4. UI installs that snapshot only if it still belongs to the current editing
+   selection and resync request, then resumes editing.
+
+The response therefore includes later valid edits submitted before the barrier;
+UI does not replay or resend them. Do not roll back immediately to an older copy.
+If the request queue is full, remain paused and retry enqueueing the barrier rather
+than dropping it or changing the authoritative originals.
+
+Pattern selection remains available during recovery. A response for an old editing
+selection cannot replace a newly selected pattern. A rejection concerning a pattern
+no longer being edited does not overwrite or pause the unrelated current editing
+copy; selecting that pattern later obtains authoritative contents as usual.
+
+Recovery depends only on the UI/store exchange, never on an audio callback.
 
 ## Reliable returns and capacity
 
@@ -391,25 +412,22 @@ reference/queue work separately from store copying and wake-up latency.
 
 ## Open decisions — discuss before implementing
 
-1. **Optimistic rejection/resynchronisation.** Decide how to reconcile a rejected
-   edit while preserving later valid edits. Possible mechanisms include a FIFO
-   resynchronisation barrier or snapshot-watermark/replay. Neither is chosen yet.
-2. **Reliable channel layout and capacities.** Set combined command, UI request/
+1. **Reliable channel layout and capacities.** Set combined command, UI request/
    response and audio return capacities, plus accounting for guaranteed releases
    and deferred control outcomes.
-3. **Store scheduling with an exhausted pool.** Specify how unsent selections,
+2. **Store scheduling with an exhausted pool.** Specify how unsent selections,
    playing/pending dirty updates and later controls are staged and ordered. Define
    handling of newer selections before an older one could acquire a buffer, and
    reconcile in-flight selections with confirmed audio state. Do not resurrect
    an obsolete pending selection or publish unrelated inactive patterns.
-4. **Snapshot attached to selection of the playing ID.** Cancellation itself is
+3. **Snapshot attached to selection of the playing ID.** Cancellation itself is
    agreed. Decide whether a newer incoming snapshot also updates current, or is
    returned with explicit continued publication of its still-unapplied edits.
    It must not silently lose those edits, regress current contents or leak buffers.
 
 The combined FIFO, exactly three snapshots total in addition to eight originals,
 current/optional-pending audio references, full copies outside audio, optimistic
-UI and timed wake-up are settled. There is no minimum-revision deadline decision
+UI, FIFO-barrier rejection recovery and timed wake-up are settled. There is no minimum-revision deadline decision
 and no separate publication queue: those were superseded by the agreed model.
 
 ## Future remote UI and limits
