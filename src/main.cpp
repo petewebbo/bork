@@ -5,6 +5,10 @@
 #include <ezpz_portaudio.hpp>
 #include <sequencer.hpp>
 #include <pattern_store.hpp>
+#include <string_view>
+#ifdef BORK_USE_JACK
+#include <pa_jack.h>
+#endif
 
 namespace {
 constexpr size_t TRACKS_TO_PROCESS = bork::GridWidget::ROWS;
@@ -47,7 +51,31 @@ private:
 };
 } // namespace
 
-int main() try {
+int main(int argc, char** argv) try {
+    bool use_jack = false;
+    for (int i = 1; i < argc; ++i) {
+        const std::string_view argument(argv[i]);
+        if (argument == "--jack") use_jack = true;
+        else if (argument == "--help") {
+            fmt::print("Usage: bork [--jack]\n");
+            return 0;
+        } else {
+            fmt::print(stderr, "Unknown argument: {}\nUsage: bork [--jack]\n", argument);
+            return 2;
+        }
+    }
+#ifdef BORK_USE_JACK
+    if (use_jack) {
+        const auto error = PaJack_SetClientName("bork"); // Must precede Pa_Initialize.
+        if (error != paNoError)
+            throw std::runtime_error(std::string("Naming JACK client: ") + Pa_GetErrorText(error));
+    }
+#else
+    if (use_jack) {
+        fmt::print(stderr, "JACK support is not enabled. Rebuild with ./build.sh USE_JACK\n");
+        return 1;
+    }
+#endif
     fmt::print("welcome to {}!\n", "bork");
     // Reverse destruction order stops callbacks before store-owned storage dies.
     bork::pattern_store store;
@@ -60,7 +88,7 @@ int main() try {
 
     bork::GridWidget widget(store);
     audio_client audio(sequencer, store.audio_status_);
-    audio.init(0, 2);
+    audio.init(0, 2, use_jack);
     sequencer.transport_.sample_rate_ = static_cast<uint32_t>(audio.sample_rate());
     sequencer.transport_.set_tempo(120.0f);
     store.start();

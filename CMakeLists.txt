@@ -39,7 +39,7 @@ FetchContent_Declare(fmt
 )
 FetchContent_MakeAvailable(portaudio fmt)
 if(USE_JACK)
-    target_link_libraries(portaudio_static PUBLIC PkgConfig::JACK)
+    target_link_libraries(portaudio_static PkgConfig::JACK)
 endif()
 include(cmake/SPSCQueue.cmake)
 

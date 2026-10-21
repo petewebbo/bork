@@ -30,14 +30,22 @@ public:
     ezpz_portaudio(ezpz_portaudio&&) = delete;
     ezpz_portaudio& operator=(ezpz_portaudio&&) = delete;
 
-    void init(size_t num_in_chans, size_t num_out_chans) {
+    void init(size_t num_in_chans, size_t num_out_chans, bool use_jack = false) {
         reset();
+        const PaHostApiInfo* host = nullptr;
+        if (use_jack) {
+            const auto index = Pa_HostApiTypeIdToHostApiIndex(paJACK);
+            if (index < 0 || !(host = Pa_GetHostApiInfo(index)))
+                throw std::runtime_error("JACK is unavailable; check that the JACK server is running");
+        }
         PaStreamParameters input{}, output{};
         double sample_rate = 0;
         if (num_out_chans) {
-            output.device = Pa_GetDefaultOutputDevice();
+            output.device = host ? host->defaultOutputDevice : Pa_GetDefaultOutputDevice();
             const auto* info = Pa_GetDeviceInfo(output.device);
-            if (!info) throw std::runtime_error("No default audio output device available");
+            if (!info) throw std::runtime_error(use_jack
+                ? "No JACK output device available; check the JACK server and its ports"
+                : "No default audio output device available");
             // Use mono if the default device cannot provide stereo.
             num_out_chans = std::min(num_out_chans, static_cast<size_t>(info->maxOutputChannels));
             if (!num_out_chans) throw std::runtime_error("Default device has no output channels");
@@ -47,7 +55,7 @@ public:
             sample_rate = info->defaultSampleRate;
         }
         if (num_in_chans) {
-            input.device = Pa_GetDefaultInputDevice();
+            input.device = host ? host->defaultInputDevice : Pa_GetDefaultInputDevice();
             const auto* info = Pa_GetDeviceInfo(input.device);
             if (!info || num_in_chans > static_cast<size_t>(info->maxInputChannels))
                 throw std::runtime_error("Default audio input device cannot provide requested channels");

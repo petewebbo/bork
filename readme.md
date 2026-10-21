@@ -24,6 +24,21 @@ JACK backend. Install `pkg-config` and JACK development files first (for example
 Running `./build.sh` without the argument explicitly disables JACK again.
 The pinned PortAudio CMake build does not support this option on macOS/Windows.
 
+To use that backend, start your JACK server, then run:
+
+```sh
+./.build/bork --jack
+```
+
+This explicitly selects PortAudio's JACK host API and its default output device,
+using the server's sample rate. The JACK client requests the name `bork` (JACK may
+append a suffix if that name is taken). Omitting `--jack` retains PortAudio's
+normal default-device selection, even in a JACK-enabled build.
+
+A build without JACK rejects `--jack` with rebuild instructions. An unavailable
+JACK backend/server or missing output ports is an error, never a silent fallback.
+`./.build/bork --help` prints usage; unknown arguments are rejected.
+
 All six test suites run in one executable, `./.build/bork_tests`, also registered
 as a single CTest test. It prints each suite name before running its assertions.
 
