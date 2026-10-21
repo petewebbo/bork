@@ -18,6 +18,9 @@ The UI requires ncurses headers/libraries (macOS Command Line Tools, or
 ctest --test-dir .build --output-on-failure
 ```
 
+All six test suites run in one executable, `./.build/bork_tests`, also registered
+as a single CTest test. It prints each suite name before running its assertions.
+
 The audio engine opens PortAudio's default output device at its default sample
 rate, using stereo when available (mono otherwise). It does not open an input
 stream. The mono sequencer mix is sent to every output channel.

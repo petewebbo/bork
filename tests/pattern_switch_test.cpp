@@ -3,6 +3,7 @@
 #undef NDEBUG
 #include <cassert>
 
+namespace {
 struct fixture {
     bork::sequencer audio;
     bork::pattern_storage cache = [] {
@@ -25,8 +26,9 @@ struct fixture {
         audio.process_track(0, buffer);
     }
 };
+} // namespace
 
-int main() {
+void test_pattern_switching() {
     {
         fixture f;
         assert(f.ui.select_pattern(0) && f.commands.empty());

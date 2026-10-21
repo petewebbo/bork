@@ -2,7 +2,7 @@
 #undef NDEBUG
 #include <cassert>
 
-int main() {
+void test_playheads() {
     bork::sequencer audio;
     bork::sequencer_status status;
     std::array<float, 160> buffer{};

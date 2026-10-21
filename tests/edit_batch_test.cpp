@@ -3,7 +3,7 @@
 #include <cassert>
 #include <thread>
 
-int main() {
+void test_edit_batches() {
     bork::sequencer audio;
     bork::command_queue commands(16);
     for (size_t i = 0; i < bork::PATTERN_EDIT_QUEUE_CAPACITY; ++i) {

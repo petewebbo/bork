@@ -3,6 +3,7 @@
 #undef NDEBUG
 #include <cassert>
 
+namespace {
 struct fixture {
     bork::sequencer audio;
     bork::pattern_storage storage{};
@@ -19,8 +20,9 @@ struct fixture {
         ui.poll_notifications();
     }
 };
+} // namespace
 
-int main() {
+void test_selection_clipboard() {
     {
         fixture f;
         f.ui.set_cursor(2, 5);

@@ -7,7 +7,7 @@
 #include <limits>
 #include <thread>
 
-int main() {
+void test_grid_tui() {
     {
         bork::sequencer switching{};
         switching.patterns_[1].tracks_[0].steps_[0] = {.note_ = 72, .vel_ = 90};
