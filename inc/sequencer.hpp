@@ -1,162 +1,90 @@
-
 #pragma once
 
 #include "bork_defines.hpp"
-#include "pattern.hpp"
 #include "pattern_exchange.hpp"
 #include "sampler.hpp"
-#include "sequencer_command.hpp"
 #include "sequencer_status.hpp"
-#include <cmath>
 #include "transport.hpp"
+#include <algorithm>
 #include <array>
+#include <cmath>
+#include <memory>
 #include <cstdint>
 #include <span>
-#include <optional>
 
 namespace bork {
-
-struct sequencer {
+struct sequencer : snapshot_consumer {
     bool is_playing_ = false;
     transport transport_;
-    pattern_storage patterns_{};
-    pattern_exchange exchange_;
-    uint8_t pattern_id_{};
-    std::optional<pattern_switch> deferred_next_pattern_;
-    pattern& current_pattern() { return patterns_[pattern_id_]; }
-    const pattern& current_pattern() const { return patterns_[pattern_id_]; }
     std::array<std::unique_ptr<machine>, MAX_NUM_TRACKS> machines_;
-    sequencer() {
-        for (auto& m : machines_) {
-            m = std::make_unique<sampler>();
-        }
-    }
 
-    // Audio-thread only. No allocation, waiting, logging or unbounded draining.
-    size_t process_commands(command_queue& commands) {
-        // Only this thread consumes. Capture once so later arrivals wait until
-        // the next callback; work is bounded by the queue's fixed capacity.
-        const size_t count = commands.size();
-        size_t processed = 0;
-        for (; processed < count; ++processed) {
-            // Leave switches queued rather than lose their acknowledgement.
-            if (commands.front()->type_ == sequencer_command::type::activate_pattern &&
-                exchange_.completed.size() == exchange_.completed.capacity()) break;
-            apply_command(*commands.front());
-            commands.pop();
-        }
-        return processed;
+    sequencer(pattern_exchange& exchange, snapshot_ref initial)
+        : snapshot_consumer(exchange, initial) {
+        for (auto& machine : machines_) machine = std::make_unique<sampler>();
     }
-
-    void apply_command(const sequencer_command& command) {
-        auto* pattern = command.pattern_id_ < patterns_.size()
-            ? &patterns_[command.pattern_id_] : nullptr;
+    const pattern& current_pattern() const noexcept { return *current_.value; }
+    uint8_t pattern_id() const noexcept { return current_.pattern_id; }
+    static size_t max_chunk_frames(double sample_rate, size_t scratch_capacity) noexcept {
+        const size_t capacity = std::max<size_t>(1, scratch_capacity);
+        if (!std::isfinite(sample_rate) || sample_rate < 200) return 1;
+        return static_cast<size_t>(std::min<double>(capacity, std::floor(sample_rate / 200)));
+    }
+    // Audio-thread only: capture each depth once, events before snapshot messages.
+    size_t process_commands() noexcept {
+        const size_t count = exchange_.events.size();
+        for (size_t i = 0; i < count; ++i) {
+            apply_command(*exchange_.events.front());
+            exchange_.events.pop();
+        }
+        return count + process_snapshots();
+    }
+    void apply_command(const sequencer_command& command) noexcept {
         switch (command.type_) {
-        case sequencer_command::type::set_step:
-            if (pattern && command.track_ < pattern->tracks_.size() && command.step_ < MAX_PATTERN_STEPS)
-                pattern->tracks_[command.track_].steps_[command.step_] = command.value_;
-            break;
-        case sequencer_command::type::clear_track:
-            if (pattern && command.track_ < pattern->tracks_.size())
-                for (auto& step : pattern->tracks_[command.track_].steps_) step.note_ = 0;
-            break;
+        case sequencer_command::type::start: is_playing_ = true; break;
+        case sequencer_command::type::stop: is_playing_ = false; break;
         case sequencer_command::type::set_tempo:
-            if (std::isfinite(command.tempo_) && command.tempo_ >= 20 && command.tempo_ <= 300)
-                transport_.set_tempo(command.tempo_);
+            if (valid_tempo(command.tempo_)) transport_.set_tempo(command.tempo_);
             break;
-        case sequencer_command::type::toggle_play:
-            is_playing_ = !is_playing_;
-            break;
-        case sequencer_command::type::update_pattern: {
-            const auto* edit = exchange_.edits.front();
-            assert(edit); // Every marker must have one previously published payload.
-            if (!edit) break;
-            if (edit->pattern_id < patterns_.size())
-                patterns_[edit->pattern_id] = edit->value;
-            exchange_.edits.pop();
-            break;
-        }
-        case sequencer_command::type::activate_pattern: {
-            if (!pattern) break;
-            if (command.pattern_id_ == pattern_id_) {
-                if (exchange_.completed.try_push(pattern_switch_ack{
-                        pattern_id_, pattern_switch_result::cancelled, command.request_id_}))
-                    deferred_next_pattern_.reset();
-            } else if (command.deferred_ == command_defer::immediate) {
-                if (switch_pattern(command.pattern_id_, command.request_id_))
-                    deferred_next_pattern_.reset();
-            } else {
-                deferred_next_pattern_ = pattern_switch{command.pattern_id_, command.request_id_};
-            }
-            break;
-        }
         }
     }
-
-    bool switch_pattern(uint8_t pattern_id, uint64_t request_id) {
-        if (exchange_.completed.size() == exchange_.completed.capacity()) return false;
-        pattern_id_ = pattern_id;
-        const bool published = exchange_.completed.try_push(pattern_switch_ack{
-            pattern_id, pattern_switch_result::switched, request_id});
-        assert(published);
-        (void)published;
-        return true;
-    }
-
-    // Call once after rendering the entire device block, not each scratch chunk.
+    // Publish after each rendered chunk, not just at the end of a device callback.
     void publish_status(sequencer_status& status, size_t processed_tracks) const noexcept {
         for (size_t track = 0; track < MAX_NUM_TRACKS; ++track) {
             const auto step = track < processed_tracks
                 ? transport_.track_transport_[track].last_step_played_ : NO_CURRENT_STEP;
-            status.publish_position(track, pattern_id_, step);
+            status.publish_position(track, pattern_id(), step);
         }
+        status.publish_selection(pattern_id(), pending_ ? std::optional<uint8_t>(pending_->pattern_id) : std::nullopt);
         status.playing.store(is_playing_, std::memory_order_relaxed);
     }
-
     void process_track(uint8_t track_idx, std::span<float> track_buffer) {
         if (!is_playing_) {
+            machines_[track_idx]->process_chunk(track_buffer); // Pause sequencing, not sample tails.
             return;
         }
         auto num_samples = track_buffer.size();
         transport_.track_transport_[track_idx].block_update(num_samples);
-
         uint32_t last_sample{};
         uint32_t samples_processed{};
-
         while (last_sample < num_samples) {
             auto next_step = transport_.track_transport_[track_idx].next_step_;
-            // FUDGE
-            if (track_idx == 0 && next_step == 0 && deferred_next_pattern_ &&
-                switch_pattern(deferred_next_pattern_->pattern_id, deferred_next_pattern_->request_id)) {
-                deferred_next_pattern_.reset();
-            }
+            // Preserve the existing track-zero switch boundary and scheduling.
+            if (track_idx == 0 && next_step == 0 && pending_) switch_pending();
             auto next_event_sample =
                 transport_.track_transport_[track_idx].get_next_step_sample(num_samples);
             last_sample = next_event_sample;
-
-            if (next_event_sample == STEP_OUT_OF_BLOCK) {
-                last_sample = num_samples;
-            }
-
-            // now actually process samples up to next_event_sample
+            if (next_event_sample == STEP_OUT_OF_BLOCK) last_sample = num_samples;
             auto samples_to_process = last_sample - samples_processed;
-
             if (samples_to_process > 0) {
                 machines_[track_idx]->process_chunk(
                     track_buffer.subspan(samples_processed, samples_to_process));
                 samples_processed += samples_to_process;
             }
-
-            // if we are at an event and not the end of the block
-            // check the pattern step and trigger an event if required
             if (samples_processed == next_event_sample) {
-                auto& step = current_pattern().tracks_[track_idx].steps_[next_step];
-                if (step.note_) {
-                    machines_[track_idx]->trigger(step);
-                }
+                const auto& step = current_pattern().tracks_[track_idx].steps_[next_step];
+                if (step.note_) machines_[track_idx]->trigger(step);
             }
         }
     }
 };
-
 } // namespace bork

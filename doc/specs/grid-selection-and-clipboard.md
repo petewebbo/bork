@@ -6,9 +6,9 @@ clears the selection, or the current row when no multi-cell selection exists.
 
 ## Scope
 
-Add rectangular grid selection and an internal application clipboard. Copy/paste
-operates on the UI's display/edit cache and sends accepted changes through the
-existing command queue. No system clipboard integration or cross-process data.
+Rectangular grid selection and an internal application clipboard operate on the
+UI's one editing copy. Accepted operation-scoped edits go to the dedicated store.
+No system clipboard integration or cross-process data.
 
 ## Selection
 
@@ -28,8 +28,8 @@ existing command queue. No system clipboard integration or cross-process data.
   from the same anchor until normal movement or another reset action.
 - Clicking a grid cell collapses selection to that cell and retains the current
   click-to-toggle behaviour. Shift-click selection is outside this scope.
-- Changing the displayed pattern resets selection to the current cursor cell;
-  acknowledging an audio switch does not reset it again.
+- Requesting another editing pattern resets selection to the current cursor cell;
+  audio status changes do not reset it again.
 - Selection is limited to the five visible tracks and sixteen visible steps.
 
 ### Rendering and input
@@ -50,8 +50,7 @@ existing command queue. No system clipboard integration or cross-process data.
 - Uppercase `C` enters copy mode. The persistent top status bar displays:
   `Copy: p = pattern | s = selection | Esc = cancel`.
 - While awaiting that choice, input does not edit cells, move the cursor, toggle
-  playback or enter pattern selection. Continue polling audio acknowledgements
-  and runtime status.
+  playback or enter pattern selection. Continue polling store responses and status.
 - `p` copies the entire displayed stored pattern, including tracks not currently
   visible in the grid. This is an application snapshot, not an audio-state read.
 - `s` copies the inclusive selected rectangle. With no multi-cell selection this
@@ -109,30 +108,22 @@ pattern switches and remains reusable after paste.
 
 ## Command delivery and consistency
 
-- Audio must receive explicit desired step/pattern values tagged with displayed
-  pattern ID; never read UI storage from the callback. The UI is the sole editor
-  and FIFO command ordering defines when each edit is applied.
-- If a switch is pending, paste targets the newly displayed/requested pattern,
-  not the last acknowledged audio pattern. Edits update the named audio-owned
-  stored pattern, without waiting for activation.
-- Apply a paste coherently at a callback boundary: do not let a large paste be
-  partly applied in different callbacks or partly committed on queue-full.
-- Use a four-entry SPSC pattern-payload queue rather than many individual step
-  commands. The sole UI producer checks both payload and command queues have
-  space, then publishes the complete pattern/ID payload followed by
-  an `update_pattern` command marker. No reentrant submission or second producer.
-  A full queue rejects the whole edit before either publication.
-- Audio consumes one payload per marker and updates the named stored pattern,
-  whether playing or not. Invalid IDs are discarded but still popped to keep
-  the queues aligned. Never drain payloads independently.
-  Queue storage is reused by pop; no edit slots or completion queue are needed.
-- Commit the UI storage update only after successful batch submission. Report
-  failure with a retry message. Clipboard and selection survive failed paste.
-- Audio batch application must be bounded and allocation-free. For current small
-  fixed-size patterns, a prepared fixed-capacity batch/full-pattern copy is
-  acceptable; document and measure its callback cost. Selection itself sends
-  only a pattern ID, never a pattern payload.
+- UI submits desired destination values to the store. Region operations change
+  only their footprint; whole-pattern paste intentionally replaces all contents.
+- Store validates and commits pattern and remembered-note changes atomically.
+  All accepted edits persist in the named original, whether playing or not.
+- UI updates optimistically only after successful request admission. Queue/credit
+  exhaustion leaves data unchanged; clipboard and selection survive failed paste.
+- Store publishes immutable full-pattern snapshot references to audio. Audio
+  adopts references before rendering chunks; no pattern copies happen in audio.
+- If a switch is pending, paste targets the loaded editing pattern, not actual
+  audio current. A newer snapshot updates current/pending without another selection.
+- Loading/recovery disables edits and copy actions; further selections remain
+  available. Rejected edits use an authoritative FIFO resync barrier.
 - Copy and selection movement require no audio commands.
+- See `2026-10-19-new-architecture.md` for channel capacities, immutable-buffer
+  lifetime, backpressure and UI/store recovery. The former four-payload/marker
+  protocol and callback-side copies are removed.
 
 ## Confirmed decisions
 

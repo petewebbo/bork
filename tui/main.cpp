@@ -1,44 +1,45 @@
 #include "grid_tui.hpp"
+#include "pattern_store.hpp"
 #include <chrono>
 #include <thread>
 
-// UI-only preview: a dummy consumer discards commands instead of rendering audio.
+// Non-rendering consumer exercises the same snapshot ownership as audio.
 int main() {
-    bork::pattern_storage storage{};
-    bork::pattern_exchange exchange;
-    bork::command_queue commands(bork::COMMAND_QUEUE_CAPACITY);
-    bork::GridWidget widget(storage, commands, exchange);
-    bork::sequencer_status status; // Preview has no audio: always stopped.
+    bork::pattern_store store;
+    bork::snapshot_consumer audio(store.exchange_, store.initial_snapshot());
+    bork::GridWidget widget(store);
+    store.start();
     std::atomic<bool> stop{false};
     std::thread consumer([&] {
-        uint8_t current_pattern = 0;
-        while (!stop.load()) {
-            const auto count = commands.size();
-            for (size_t i = 0; i < count; ++i) {
-                const auto& command = *commands.front();
-                if (command.type_ == bork::sequencer_command::type::activate_pattern) {
-                    if (exchange.completed.size() == exchange.completed.capacity()) break;
-                    const auto result = command.pattern_id_ == current_pattern
-                        ? bork::pattern_switch_result::cancelled : bork::pattern_switch_result::switched;
-                    current_pattern = command.pattern_id_;
-                    exchange.completed.try_push(bork::pattern_switch_ack{
-                        current_pattern, result, command.request_id_});
-                } else if (command.type_ == bork::sequencer_command::type::update_pattern) {
-                    // Like audio, consume exactly one payload per command marker.
-                    if (exchange.edits.front()) exchange.edits.pop();
+            bool playing = false;
+            while (!stop.load(std::memory_order_relaxed)) {
+                const auto count = store.exchange_.events.size();
+                for (size_t i = 0; i < count; ++i) {
+                    const auto& event = *store.exchange_.events.front();
+                    if (event.type_ == bork::sequencer_command::type::start) playing = true;
+                    if (event.type_ == bork::sequencer_command::type::stop) playing = false;
+                    store.exchange_.events.pop();
                 }
-                commands.pop();
+                audio.process_snapshots();
+                // Preview has no musical clock: pending selections activate when playing.
+                if (playing) audio.switch_pending();
+                store.audio_status_.publish_selection(audio.current_.pattern_id,
+                    audio.pending_ ? std::optional<uint8_t>(audio.pending_->pattern_id) : std::nullopt);
+                store.audio_status_.playing.store(playing, std::memory_order_relaxed);
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(5));
-        }
     });
     try {
-        bork::run_grid_tui(widget, status);
+        bork::run_grid_tui(widget, store.ui_status_);
     } catch (...) {
-        stop.store(true);
+        store.stop_admission();
+        stop.store(true, std::memory_order_relaxed);
         consumer.join();
         throw;
     }
-    stop.store(true);
+    store.stop_admission();
+    stop.store(true, std::memory_order_relaxed);
     consumer.join();
+    audio.release_all();
+    store.stop();
 }

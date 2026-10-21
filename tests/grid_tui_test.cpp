@@ -1,32 +1,32 @@
 #include <grid_tui.hpp>
 #include <midi_notes.hpp>
-#include <string_view>
 #include <sequencer.hpp>
+#include <string_view>
 #undef NDEBUG
 #include <cassert>
 #include <limits>
 #include <thread>
 
-int main() {
-    {
-        bork::sequencer switching{};
-        switching.patterns_[1].tracks_[0].steps_[0] = {.note_ = 72, .vel_ = 90};
-        switching.transport_.track_transport_[0].next_step_ = 7;
-        switching.apply_command({.type_ = bork::sequencer_command::type::activate_pattern,
-                                 .pattern_id_ = 1});
-        assert(switching.pattern_id_ == 1 && !switching.is_playing_);
-        assert(switching.current_pattern().tracks_[0].steps_[0].note_ == 72);
-        assert(switching.transport_.track_transport_[0].next_step_ == 7);
-        const auto* ack = switching.exchange_.completed.front();
-        assert(ack && ack->pattern_id == 1 && ack->result == bork::pattern_switch_result::switched);
-        switching.exchange_.completed.pop();
-        switching.apply_command({.type_ = bork::sequencer_command::type::set_step,
-                                 .value_ = {.note_ = 1}}); // Different pattern.
-        assert(switching.current_pattern().tracks_[0].steps_[0].note_ == 72);
-        switching.apply_command({.type_ = bork::sequencer_command::type::set_step,
-                                 .value_ = {.note_ = 74}, .pattern_id_ = 1});
-        assert(switching.current_pattern().tracks_[0].steps_[0].note_ == 74);
+namespace {
+struct fixture {
+    bork::pattern_store store;
+    bork::sequencer audio;
+    bork::GridWidget ui;
+    explicit fixture(const bork::pattern_storage& initial = {})
+        : store(initial), audio(store.exchange_, store.initial_snapshot()), ui(store) { flush(); }
+    void flush() {
+        for (int pass = 0; pass < 6; ++pass) {
+            store.pump();
+            audio.process_commands();
+            audio.publish_status(store.audio_status_, bork::GridWidget::ROWS);
+            store.pump();
+            ui.poll_notifications();
+        }
     }
+};
+}
+
+void test_grid_tui() {
     bork::sequencer_status status;
     const auto& published = status;
     assert(!published.playing.load(std::memory_order_relaxed));
@@ -34,126 +34,124 @@ int main() {
     publisher.join();
     assert(published.playing.load(std::memory_order_relaxed));
     status.playing.store(false, std::memory_order_relaxed);
-    assert(!published.playing.load(std::memory_order_relaxed));
     assert(std::string_view(bork::lookup_midi_note(0)->name.data()) == "C-1");
     assert(std::string_view(bork::lookup_midi_note(60)->name.data()) == "C4");
     assert(std::string_view(bork::lookup_midi_note(61)->name.data()) == "C#4");
     assert(std::string_view(bork::lookup_midi_note(127)->name.data()) == "G9");
     assert(std::abs(bork::lookup_midi_note(69)->frequency - 440.0) < 0.000001);
     assert(!bork::lookup_midi_note(-1) && !bork::lookup_midi_note(128));
-    {
-        bork::sequencer pitched{};
-        auto& pitched_pattern = pitched.current_pattern();
-        pitched_pattern.tracks_[0].steps_[0] = {.note_ = 61, .vel_ = 90};
-        bork::command_queue queue(8);
-        bork::pattern_storage stored{};
-        stored[0] = pitched_pattern;
-        bork::GridWidget ui(stored, queue, pitched.exchange_);
-        assert(ui.note_number(0, 0) == 61);
-        assert(ui.togglecell());
-        assert(ui.note_number(0, 0) == 0);
-        assert(ui.togglecell());
-        assert(ui.note_number(0, 0) == 61);
-        pitched.process_commands(queue);
-        assert(pitched_pattern.tracks_[0].steps_[0].note_ == 61);
-        assert(ui.clearrow());
-        assert(ui.togglecell());
-        pitched.process_commands(queue);
-        assert(pitched_pattern.tracks_[0].steps_[0].note_ == 61);
-    }
-    bork::sequencer engine{};
-    auto& pattern = engine.current_pattern();
-    pattern.tracks_[0].steps_[3] = {.note_ = 1, .vel_ = 80, .len_ = 12};
-    pattern.tracks_[4].steps_[14] = {.note_ = 1, .vel_ = 40};
-    bork::command_queue commands(bork::COMMAND_QUEUE_CAPACITY);
-    bork::pattern_storage storage{};
-    storage[0] = pattern;
-    bork::GridWidget widget(storage, commands, engine.exchange_);
-    assert(!engine.is_playing_);
-    assert(widget.toggleplay());
-    assert(engine.process_commands(commands) == 1);
-    assert(engine.is_playing_);
-    assert(widget.toggleplay());
-    assert(engine.process_commands(commands) == 1);
-    assert(!engine.is_playing_);
-    assert(widget.grid_state_[0][3]);
-    assert(widget.grid_state_[4][14]);
-    assert(!widget.grid_state_[2][0]);
-    widget.current_col_ = 3;
-    assert(widget.togglecell());
-    // UI edits must not mutate live sequencer state before consumption.
-    assert(pattern.tracks_[0].steps_[3].note_ == 1);
-    assert(!widget.grid_state_[0][3]);
-    assert(engine.process_commands(commands) == 1);
-    assert(pattern.tracks_[0].steps_[3].note_ == 0);
-    assert(pattern.tracks_[0].steps_[3].vel_ == 80);
-    assert(widget.togglecell());
-    assert(engine.process_commands(commands) == 1);
-    assert(pattern.tracks_[0].steps_[3].note_ == 1);
-    assert(pattern.tracks_[0].steps_[3].len_ == 12);
-    widget.current_row_ = 2;
-    widget.current_col_ = 0;
-    assert(widget.togglecell());
-    assert(widget.clearrow());
-    assert(widget.togglecell());
-    assert(engine.process_commands(commands) == 3); // FIFO: enable, clear, enable
-    assert(pattern.tracks_[2].steps_[0].note_ == bork::GridWidget::kDefaultNoteNumber);
-    assert(pattern.tracks_[2].steps_[0].vel_ == 100);
-    assert(widget.clearrow());
-    assert(engine.process_commands(commands) == 1);
-    for (const auto& step : pattern.tracks_[2].steps_) assert(step.note_ == 0);
-    for (bool active : widget.grid_state_[2]) assert(!active);
-    assert(pattern.tracks_[4].steps_[14].note_ == 1);
 
-    // Full queue rejects both cell and whole-row edits without changing the UI.
-    bork::command_queue tiny(1);
-    bork::pattern_storage full_storage{};
-    full_storage[0] = pattern;
-    bork::pattern_exchange full_exchange;
-    bork::GridWidget full_widget(full_storage, tiny, full_exchange);
-    assert(full_widget.togglecell());
-    assert(!full_widget.togglecell());
-    assert(full_widget.queue_full_ && full_widget.grid_state_[0][0]);
-    full_widget.current_col_ = 3;
-    assert(!full_widget.clearrow());
-    assert(full_widget.grid_state_[0][3]);
-    assert(engine.process_commands(tiny) == 1);
-    assert(full_widget.clearrow());
-    assert(!full_widget.queue_full_);
-    assert(engine.process_commands(tiny) == 1);
+    bork::pattern_storage initial{};
+    initial[0].tracks_[0].steps_[3] = {.note_ = 61, .vel_ = 80, .len_ = 12};
+    initial[0].tracks_[4].steps_[14] = {.note_ = 74, .vel_ = 40};
+    fixture f(initial);
+    assert(!f.ui.loading() && f.ui.loaded_pattern_ == 0);
+    assert(!f.audio.is_playing_);
+    assert(f.ui.toggleplay() && f.ui.toggleplay());
+    f.flush();
+    assert(!f.audio.is_playing_); // Explicit start/stop preserve rapid toggle intent.
+    assert(f.ui.toggleplay());
+    f.flush();
+    assert(f.audio.is_playing_);
+    assert(f.ui.toggleplay());
+    f.flush();
+    assert(!f.audio.is_playing_);
+    assert(f.ui.grid_state_[0][3] && f.ui.grid_state_[4][14]);
+    assert(!f.ui.grid_state_[2][0]);
+    f.ui.set_cursor(0, 3);
+    assert(f.ui.togglecell());
+    assert(f.ui.note_number(0, 3) == 0);
+    assert(f.store.original(0).tracks_[0].steps_[3].note_ == 61);
+    assert(f.audio.current_pattern().tracks_[0].steps_[3].note_ == 61);
+    f.store.pump();
+    assert(f.store.original(0).tracks_[0].steps_[3].note_ == 0);
+    assert(f.audio.current_pattern().tracks_[0].steps_[3].note_ == 61);
+    f.flush();
+    assert(f.audio.current_pattern().tracks_[0].steps_[3].note_ == 0);
+    assert(f.ui.togglecell());
+    assert(f.ui.note_number(0, 3) == 61);
+    f.flush();
+    assert(f.audio.current_pattern().tracks_[0].steps_[3].vel_ == 80);
+    assert(f.audio.current_pattern().tracks_[0].steps_[3].len_ == 12);
+    assert(f.ui.clearrow() && f.ui.togglecell());
+    f.flush();
+    assert(f.store.original(0).tracks_[0].steps_[3].note_ == 61);
+    f.ui.set_cursor(2, 0);
+    assert(f.ui.togglecell() && f.ui.clearrow() && f.ui.togglecell());
+    f.flush();
+    assert(f.store.original(0).tracks_[2].steps_[0].note_ == 60);
+    assert(f.store.original(0).tracks_[2].steps_[0].vel_ == 100);
+    assert(f.ui.clearrow());
+    f.flush();
+    for (const auto& step : f.store.original(0).tracks_[2].steps_) assert(step.note_ == 0);
+    assert(f.store.original(0).tracks_[4].steps_[14].note_ == 74);
 
-    // Process the entire captured backlog, including more than the former 64 cap.
-    for (size_t i = 0; i < bork::COMMAND_QUEUE_CAPACITY; ++i)
-        assert(commands.try_push(bork::sequencer_command{.type_ = bork::sequencer_command::type::clear_track}));
-    assert(engine.process_commands(commands) == bork::COMMAND_QUEUE_CAPACITY);
-    assert(!commands.front());
-    assert(engine.process_commands(commands) == 0);
+    // Results reserve credits until consumed, not merely until store processing.
+    for (size_t i = 0; i < 64; ++i) assert(f.ui.togglecell());
+    const int before = f.ui.note_number(2, 0);
+    assert(!f.ui.togglecell() && f.ui.queue_full_);
+    assert(!f.ui.clearrow() && f.ui.note_number(2, 0) == before);
+    f.store.pump();
+    assert(!f.ui.togglecell()); // Request queue is drained, reliable results still occupy credits.
+    f.ui.poll_notifications();
+    assert(f.ui.togglecell() && !f.ui.queue_full_);
+    f.flush();
 
-    // Invalid indices and tempo values are ignored, not used as array indices.
-    engine.apply_command({.type_ = bork::sequencer_command::type::set_step, .track_ = 255, .step_ = 255});
-    engine.apply_command({.type_ = bork::sequencer_command::type::clear_track, .track_ = 255});
-    engine.transport_.sample_rate_ = 48000;
-    engine.apply_command({.type_ = bork::sequencer_command::type::set_tempo, .tempo_ = 150});
-    const auto samples_per_tick = engine.transport_.track_transport_[0].samples_per_tick_;
+    // Editing selection is independent of paused/deferred audio activation.
+    f.ui.copy_pattern();
+    assert(f.ui.select_pattern(1) && f.ui.loading());
+    assert(f.ui.loaded_pattern_ == 0 && f.ui.selected_pattern_ == 1);
+    assert(!f.ui.togglecell() && !f.ui.clearrow() && !f.ui.toggle_selection());
+    assert(!f.ui.clear_selection() && !f.ui.paste());
+    const auto row = f.ui.current_row_, col = f.ui.current_col_;
+    assert(!f.ui.click_cell(4, 15));
+    assert(f.ui.current_row_ == row && f.ui.current_col_ == col);
+    f.ui.copy_pattern(); // Loading must not overwrite the deliberate clipboard.
+    f.store.pump();
+    bork::store_result result{};
+    while (f.store.try_result(result)) {} // A terminal selection result alone is not a copy.
+    assert(f.ui.loading());
+    f.ui.poll_notifications();
+    assert(!f.ui.loading() && f.ui.loaded_pattern_ == 1);
+    assert(f.audio.pattern_id() == 0);
+    assert(f.ui.paste());
+    f.flush();
+    assert(f.store.original(1).tracks_[4].steps_[14].note_ == 74);
+    assert(f.audio.pattern_id() == 0 && f.audio.pending_ && f.audio.pending_->pattern_id == 1);
+
+    // A stale queued copy cannot complete a newer selection, even on revisiting an ID.
+    assert(f.ui.select_pattern(2));
+    f.store.pump();
+    assert(f.ui.select_pattern(3) && f.ui.select_pattern(2));
+    f.store.pump();
+    f.ui.poll_notifications();
+    assert(f.ui.loading());
+    f.store.pump();
+    f.ui.poll_notifications();
+    assert(!f.ui.loading() && f.ui.loaded_pattern_ == 2);
+    f.flush();
+
+    f.audio.transport_.sample_rate_ = 48000;
+    f.audio.apply_command({.type_ = bork::sequencer_command::type::set_tempo, .tempo_ = 150});
+    const auto samples_per_tick = f.audio.transport_.track_transport_[0].samples_per_tick_;
     assert(std::abs(samples_per_tick - 100.0f) < 0.001f);
-    engine.apply_command({.type_ = bork::sequencer_command::type::set_tempo, .tempo_ = std::numeric_limits<float>::quiet_NaN()});
-    assert(engine.transport_.track_transport_[0].samples_per_tick_ == samples_per_tick);
+    f.audio.apply_command({.type_ = bork::sequencer_command::type::set_tempo,
+                           .tempo_ = std::numeric_limits<float>::quiet_NaN()});
+    assert(f.audio.transport_.track_transport_[0].samples_per_tick_ == samples_per_tick);
 
-    // Exercise actual producer/consumer publication and repeated ring wraparound.
+    // Exercise real SPSC publication and repeated ring wraparound.
     bork::command_queue concurrent(8);
     std::thread producer([&] {
         for (int i = 1; i <= 10000; ++i) {
             const bork::sequencer_command command{
-                .type_ = bork::sequencer_command::type::set_step,
-                .value_ = {.note_ = i},
-            };
+                .type_ = bork::sequencer_command::type::set_tempo, .tempo_ = static_cast<float>(i)};
             while (!concurrent.try_push(command)) std::this_thread::yield();
         }
     });
     for (int i = 1; i <= 10000; ++i) {
         const bork::sequencer_command* command;
         while (!(command = concurrent.front())) std::this_thread::yield();
-        assert(command->value_.note_ == i);
+        assert(command->tempo_ == i);
         concurrent.pop();
     }
     producer.join();

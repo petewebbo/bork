@@ -47,7 +47,7 @@ struct client : ezpz_portaudio<float> {
         return paContinue;
     }
 };
-int main() {
+void test_portaudio() {
     device_info.maxOutputChannels = 2;
     device_info.defaultSampleRate = 44100;
     {

@@ -41,6 +41,7 @@ CPMAddPackage(
 
 set(CURSES_NEED_NCURSES TRUE)
 find_package(Curses REQUIRED)
+find_package(Threads REQUIRED)
 
 add_executable(bork src/main.cpp tui/grid_tui.cpp)
 target_include_directories(bork PUBLIC
@@ -52,36 +53,25 @@ target_link_libraries(bork PRIVATE
     portaudio_static
     AudioFile
     SPSCQueue::SPSCQueue
+    Threads::Threads
     ${CURSES_LIBRARIES}
 )
 
 include(CTest)
 if(BUILD_TESTING)
-    find_package(Threads REQUIRED)
-    add_executable(portaudio_test tests/portaudio_test.cpp)
-    target_include_directories(portaudio_test PRIVATE inc)
-    target_link_libraries(portaudio_test PRIVATE portaudio_static)
-    add_test(NAME portaudio_wrapper COMMAND portaudio_test)
-    add_executable(grid_tui_test tests/grid_tui_test.cpp)
-    target_include_directories(grid_tui_test PRIVATE inc)
-    target_link_libraries(grid_tui_test PRIVATE SPSCQueue::SPSCQueue AudioFile fmt::fmt Threads::Threads)
-    add_test(NAME grid_tui_model COMMAND grid_tui_test)
-    add_executable(pattern_switch_test tests/pattern_switch_test.cpp)
-    target_include_directories(pattern_switch_test PRIVATE inc)
-    target_link_libraries(pattern_switch_test PRIVATE SPSCQueue::SPSCQueue AudioFile fmt::fmt Threads::Threads)
-    add_test(NAME pattern_switching COMMAND pattern_switch_test)
-    add_executable(edit_batch_test tests/edit_batch_test.cpp)
-    target_include_directories(edit_batch_test PRIVATE inc)
-    target_link_libraries(edit_batch_test PRIVATE SPSCQueue::SPSCQueue AudioFile fmt::fmt Threads::Threads)
-    add_test(NAME edit_batches COMMAND edit_batch_test)
-    add_executable(selection_clipboard_test tests/selection_clipboard_test.cpp)
-    target_include_directories(selection_clipboard_test PRIVATE inc)
-    target_link_libraries(selection_clipboard_test PRIVATE SPSCQueue::SPSCQueue AudioFile fmt::fmt)
-    add_test(NAME selection_clipboard COMMAND selection_clipboard_test)
-    add_executable(playhead_test tests/playhead_test.cpp)
-    target_include_directories(playhead_test PRIVATE inc)
-    target_link_libraries(playhead_test PRIVATE SPSCQueue::SPSCQueue AudioFile fmt::fmt Threads::Threads)
-    add_test(NAME playhead_telemetry COMMAND playhead_test)
-    set_tests_properties(playhead_telemetry PROPERTIES TIMEOUT 5)
+    add_executable(bork_tests
+        tests/main.cpp
+        tests/portaudio_test.cpp
+        tests/grid_tui_test.cpp
+        tests/pattern_switch_test.cpp
+        tests/edit_batch_test.cpp
+        tests/selection_clipboard_test.cpp
+        tests/playhead_test.cpp
+    )
+    target_include_directories(bork_tests PRIVATE inc)
+    target_link_libraries(bork_tests PRIVATE
+        portaudio_static SPSCQueue::SPSCQueue AudioFile fmt::fmt Threads::Threads)
+    add_test(NAME bork_tests COMMAND bork_tests)
+    set_tests_properties(bork_tests PROPERTIES TIMEOUT 10)
 endif()
 
