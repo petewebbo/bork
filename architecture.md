@@ -1,9 +1,9 @@
 # Bork architecture direction
 
-This document records the intended direction, not a description of everything
-currently implemented. The current prototype uses an SPSC command queue for
-pattern edits and atomic playing/per-track playhead telemetry; richer parameters,
-machine replacement and additional telemetry are future work.
+The current implementation separates UI editing, a dedicated authoritative pattern
+store, and audio playback. The detailed ownership and queue contract lives in
+`doc/specs/2026-10-19-new-architecture.md`. Parameter and machine examples below
+describe future direction, not additional implemented features.
 
 ## Expected scope
 
@@ -20,24 +20,17 @@ are ownership, coherent edits and bounded real-time work.
 
 ### Editable state and the stored pattern bank
 
-The audio engine owns the complete eight-pattern bank, including patterns that
-are not playing. Selection commands carry IDs only; a new ID replaces the pending
-selection, and selecting the playing ID cancels it. All pattern edits target the
-named stored pattern, not just the current one.
+The store owns the eight editable originals, per-pattern remembered notes, and
+five shared playback snapshot allocations. The UI owns only its current editing
+copy, associated metadata and deliberate clipboard. It updates optimistically
+after successful store-request admission and recovers rejected edits through a
+FIFO resynchronisation barrier.
 
-The application/UI thread keeps a separate display/edit cache and prepares edits:
-
-- Patterns and steps.
-- Track machine selection.
-- Base parameter values.
-- Per-step parameter values or locks.
-- Sample selection and other configuration.
-
-This thread can allocate, save/load files, support undo and prepare larger edits.
-It updates its cache only after successful command submission. The UI is the sole
-editor, so it does not need to read mutable audio patterns back to display values
-it already knows. Future engine-generated pattern changes would need an explicit
-cache-update path.
+Audio borrows only current and optional pending immutable snapshots. Selection
+includes the initial snapshot; content updates replace matching references.
+The store applies all edits and copies originals into free snapshots off audio.
+Only explicit audio release permits reuse. A new selection replaces pending;
+selecting the actual playing pattern cancels pending and refreshes current.
 
 ### Audio runtime state
 
@@ -66,43 +59,33 @@ Expose a deliberately small runtime view:
 Do not mirror the whole project through atomics or a status structure.
 
 ```text
-                     edit commands
-UI/project model ---------------------> audio engine
-       |                                     |
-       | save/load/undo                      | render audio
-       |                                     |
-       <--------- published telemetry --------
+UI editing copy <--> dedicated pattern store --> audio current/pending references
+                           ^                         |
+                           +---- snapshot releases --+
+UI status <--------- store-forwarded atomic telemetry
 ```
 
 ## Command transport and ownership
 
-The current transport is a fixed-capacity rigtorp/SPSCQueue:
+All queues use the installed rigtorp/SPSCQueue dependency with one producer and
+one consumer. Their storage outlives callbacks:
 
-- The TUI/application thread is the sole producer.
-- The PortAudio callback is the sole consumer.
-- The queue is allocated before audio activation and outlives audio shutdown.
-- Switch responses carry a request ID, so older outcomes cannot clear newer UI
-  pending state. They report playback changes, not pattern-slot ownership.
-- The UI snapshots the initial pattern bank before audio starts.
-- The UI uses non-blocking enqueue and updates its model only after success.
-- A full queue rejects the edit and provides user feedback rather than silently
-  dropping an edit already shown in the UI.
-- Commands carry explicit desired values, not relative toggle operations.
+- UI/store: requests 64, reliable results 64, editing snapshots 1.
+- Store/audio: events 64, snapshot references 3.
+- Audio/store: buffer releases 5.
 
-At callback entry, the engine currently reads the queue depth once and processes
-up to that many commands before rendering any tracks. Later arrivals wait for a
-future callback. A full switch-response queue stops consumption before the next
-activation command; it remains queued until the UI drains responses. Work is bounded by the fixed queue capacity, currently 1024 messages.
-This is a concurrent depth observation, not a synchronised wall-clock snapshot.
+UI admission reserves one of 64 terminal-result credits. Audio needs no reliable
+per-command result or snapshot revision. Latest-value telemetry reports actual
+playing/pending state independently of store acceptance.
 
-As commands become more varied, revisit this processing policy: message count
-alone is not an audio-time budget. Callback-side operations must remain small
-and bounded. No allocation, blocking, file I/O, logging or heavyweight destruction
-belongs in command handlers.
+Audio checks events then snapshots before each approximately 5 ms processing chunk.
+Each drain captures queue depth once. Ordering is FIFO within each queue, not
+between event and snapshot queues. Callback handlers never copy full patterns,
+allocate, block, lock, log or destroy heavyweight ownership.
 
-This is an in-process thread boundary, not an IPC transport. A future transport
-can reuse the command concepts, but cannot simply share this queue between
-processes.
+Store retains edits in originals under publication backpressure and prioritises
+the latest unsent selection. Snapshot references stay immutable until returned;
+queue emptiness never grants permission to reuse them.
 
 ## Parameter IDs and machine descriptors
 
@@ -182,24 +165,13 @@ interface with lock-free atomics. Relaxed loads/stores are sufficient when each
 field is independent telemetry, not a publication signal for other non-atomic
 data. Verify that the chosen atomic types are lock-free on supported targets.
 
-The current status interface publishes playing state and per-track positions.
-Each position packs pattern ID and step into one lock-free 32-bit atomic and is
-published once at the end of an audio callback. The UI reads once per row per
-redraw, hides stopped/mismatched-pattern positions, and never reads live transport.
+Status publishes playing state, current/pending pattern IDs and per-track positions
+after each rendered chunk. Each position packs pattern ID and step into one
+lock-free 32-bit atomic. Store forwards status; UI refreshes every 25 ms and hides
+stopped/mismatched/loading positions without reading live transport.
 
-The UI can hold a const reference to this status interface instead of to the
-sequencer. Fields may reflect slightly different callback updates; this is
-normally acceptable for visual indicators. Intermediate values can be skipped
-without building a backlog.
-
-If a coherent status frame is required, use a separate audio-to-UI SPSC queue
-carrying small snapshots. Publish without blocking, define a queue-full policy,
-and have the UI render the newest snapshot it has received. Publishing less
-frequently than every callback may be appropriate.
-
-The UI-to-audio command queue and audio-to-UI status path have different delivery
-requirements: edits must not disappear silently, while intermediate telemetry
-can often be skipped.
+Fields may reflect slightly different updates; intermediate values may be skipped.
+Telemetry is not an ownership signal or a reliable result queue.
 
 ## Machine replacement and resource lifetime
 
@@ -230,31 +202,15 @@ Avoid expressing these as thousands of unrelated edits spread unpredictably
 across callbacks. Batch adoption must still have bounded callback-side work;
 calling a large operation one command does not make it real-time safe.
 
-### Pattern-loading recommendation
+### Pattern loading and bulk editing
 
-- Parse and validate off the audio thread into a small preallocated transfer-slot
-  pool. Only the UI/application thread submits commands, even if a worker loads
-  the file.
-- Enqueue one `load_pattern` command carrying a slot index. On enqueue success,
-  the UI adopts its local copy and must not touch that slot until returned.
-- At a block boundary, copy the prepared fixed-size pattern into the engine.
-  Return the slot through a dedicated completion SPSC queue sized for every
-  transfer slot, so ownership notifications cannot be lost.
-- FIFO order defines edits before/after loading. Make transport behaviour
-  (preserve position vs restart), voice handling and quantised adoption explicit.
-- If patterns grow too large to copy cheaply, swap an active slot/index instead;
-  return the old slot for non-audio reuse/destruction. Never retain references
-  into a retired pattern.
+Parsing/loading belongs off audio. Store validates and applies complete UI
+operations to originals, then prepares immutable playback snapshots. Audio adopts
+references rather than copying data. Local region operations must not overwrite
+unrelated optimistic edits; whole-pattern replacement is intentional and explicit.
 
-## Incremental implementation plan
-
-1. Keep the command queue and evolve the UI pattern copy into an application-owned
-   project model.
-2. Introduce stable machine and parameter IDs with immutable descriptors.
-3. Add parameter and step-parameter commands.
-4. Publish a small runtime status interface for playheads and meters.
-5. Add prepared-state handoff and reclamation when machine replacement or bulk
-   editing requires it.
+Future machine/parameter work should reuse this separation rather than introduce
+another mutable bank or callback-side resource preparation.
 
 The guiding principle is to keep editable project data, audio execution state
 and telemetry separate—not to expose more of the sequencer or make every

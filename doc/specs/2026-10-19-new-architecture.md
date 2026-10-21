@@ -1,478 +1,308 @@
-# New architecture: UI, pattern store and audio
+# UI, pattern store and audio
 
-Date: 2026-10-19
-Status: planned; not implemented. Agreed requirements below supersede the earlier
-per-pattern buffer pools, two outgoing queues and minimum-revision activation gate.
-Open decisions at the end must be resolved before the affected implementation.
+Status: implemented 2026-10-21. Rewritten 2026-10-21.
+This document replaces the earlier design in this file.
 
-## Goal and agreed choices
+## Purpose
 
-Separate editing, authoritative storage and real-time playback:
+Move authoritative pattern editing out of audio and separate it from the UI.
+Keep playback handoff small, bounded and easy to understand.
 
-- UI holds only its current editing pattern, not a full bank cache.
-- A dedicated non-real-time pattern-store thread owns eight editable originals.
-- In addition to those originals, the store owns exactly three preallocated
-  full-pattern playback snapshot buffers, shared across the entire bank.
-- Audio borrows at most two snapshot references: current and optional pending.
-- One combined, bounded FIFO queue carries controls and snapshot references from
-  store to audio. It is not restricted to length one.
-- Buffer availability limits snapshot publication independently of queue capacity.
-- All whole-pattern copies happen outside audio. Publishing means enqueueing a
-  pointer and small identifiers, not copying pattern contents into audio.
-- UI edits remain optimistic after successful request enqueue.
-- UI work wakes the store through a condition variable. Audio returns are polled
-  through timed waits; audio does not notify that condition variable.
+Expected operation: UI work is serviced at intervals of at most 25 ms; audio
+checks its queues roughly every 5 ms. These are operating targets, not ownership
+or memory-safety guarantees. Queue-full handling still exists.
 
-New selections replace pending selections. Selecting the actual playing pattern
-cancels pending playback. Audio decides when a deferred switch occurs.
+## Ownership
 
-Preserve musical switch timing rather than waiting for a newer revision. An update
-arriving mid-callback is applied at a later callback start, not another pattern
-boundary. No chunking, per-track sharing or persistent data structures are included.
-
-## Components
-
-```text
-UI — main thread
-  One editing copy, current-pattern metadata, cursor, selection, clipboard
-       |
-       | requests / editing snapshots and results
-       v
-Pattern store — dedicated non-real-time thread
-  Eight editable originals + three playback snapshots TOTAL
-       |
-       +-- combined FIFO: controls + snapshot references --> Audio
-       ^
-       | snapshot releases and reliable control outcomes
-       |
-Audio — callback thread
-  Current snapshot reference + optional pending snapshot reference
-  Transport, machines and playback state
-```
-
-The store is not part of the GUI. A future remote UI can communicate with it
-through an adapter while store and audio remain local.
-
-## Ownership and memory
-
-| Data | Owner |
+| Component | Owns |
 |---|---|
-| Eight authoritative editable patterns | Store |
-| Three playback snapshot allocations total | Store |
-| Queued, current and pending snapshot references | Audio borrows; store retains backing storage |
-| Current editing copy | UI |
-| Clipboard snapshot | UI |
-| Playing/pending state and their adopted revisions | Audio |
-| Transport, voices and playback cursors | Audio |
-| Playheads/runtime status | Audio produces; store forwards to UI |
+| UI/main thread | One editing copy and its metadata, cursor, selection, clipboard |
+| Dedicated store thread | Eight editable patterns, remembered-note metadata, five playback snapshot buffers |
+| Audio | Transport, machines, one current snapshot reference, optional pending snapshot reference |
 
-The eight originals and three snapshot buffers are separate allocations. A busy
-snapshot pool never prevents applying an edit to an original. Audio never reads
-an original, and the UI never reads mutable store or audio fields directly.
+Store originals and playback snapshots are separate. Audio never reads an editable
+original. UI never reads mutable store/audio fields directly. Audio borrows
+immutable snapshots; the store owns all backing allocations.
 
-Per-pattern remembered-note metadata belongs to the store. Editing snapshots
-include the current pattern's metadata only. Preserve restoration after toggling,
-clearing and revisiting patterns without retaining an eight-pattern metadata cache
-in the UI. Playback snapshots need not include editor-only metadata.
+Use whole-pattern copies on the store thread. No chunking, copy-on-write trees,
+networking, persistence or source-layout reorganisation.
 
-The UI editing copy and deliberate clipboard snapshot are not members of the
-three-buffer playback pool. No hidden full-bank cache exists in UI or audio.
+## Store → audio: two queues
 
-## Snapshot references and identities
+Use the existing SPSC queue dependency. Store is sole producer; audio sole consumer.
 
-A reference identifies:
+| Queue | Capacity | Contents |
+|---|---:|---|
+| Events | 64 | Start, stop, tempo |
+| Snapshots | 3 | Snapshot reference and selection flags |
 
-- Snapshot buffer ID: one of the three stable-address allocations.
-- Borrowed `const pattern*`.
-- Stored pattern ID whose contents were copied.
-- Pattern revision represented by the snapshot.
+A snapshot reference contains buffer identity, pattern ID and a `const pattern*`.
+It is not an owning smart pointer or inline pattern value.
 
-Each stored pattern has a monotonically increasing logical edit revision. Buffer
-IDs are reused, so buffer ID alone does not identify snapshot contents. Request
-IDs separately associate UI operations, selections and their responses.
-
-Audio conceptually holds:
+Conceptually:
 
 ```cpp
-snapshot_ref current_;
-std::optional<snapshot_ref> pending_;
+struct snapshot_message {
+    snapshot_ref snapshot;
+    bool select;
+    bool deferred;
+};
 ```
 
-It does not retain a reference array for all eight patterns. A pending selection
-also carries its selection request ID and deferred/immediate mode.
+- `select == true`: select this pattern using the attached contents.
+- `select == false`: update contents of a matching current/pending pattern.
+- `deferred` matters only for selection.
 
-Revisions identify freshness and prevent regression; they are not a minimum-version
-gate that can postpone an otherwise due pattern switch.
+Selection and initial contents are one message. No separate switch message,
+snapshot revisions, minimum-version gates or audio control-result credits.
+Snapshot messages retain FIFO order. Events are FIFO within their own queue;
+there is deliberately no global ordering between events and snapshots.
 
-## Snapshot pool lifecycle
+Audio processes events first, then snapshots, before each audio processing chunk.
+Capture each queue's depth once per drain, keeping work bounded. Process all
+captured messages, not just one message per chunk.
 
-Roles rotate across the three allocations. No buffer permanently belongs to a
-particular pattern, audio position or editing role.
+Start/stop are explicit desired states rather than toggle events. UI can still
+present a toggle control. Validate tempo using the existing finite/range checks.
+Stop pauses sequencing; it does not discard pending selection or cut sample tails.
 
-Typical state:
+## Snapshot pool and release
 
-```text
-Store originals: A, B, C, D, E, F, G, H — editable
+Allocate exactly five stable-address playback buffers before starting audio:
 
-Snapshot 0: current A — immutable, borrowed by audio
-Snapshot 1: pending B — immutable, borrowed by audio
-Snapshot 2: queued B update or another selection — immutable
-```
+- Up to one current reference.
+- Up to one pending reference.
+- Up to three snapshot references queued for audio.
 
-In that state all snapshots are occupied. Further edits accumulate in the eight
-originals. There is no requirement for a fourth writable playback snapshot.
+These are maximum roles, not permanent assignments. A returned buffer may still
+be awaiting store reclamation, so queue space alone does not imply a free buffer.
 
 Publication:
 
-1. Store obtains a free snapshot buffer.
-2. Store copies the desired original into it, recording pattern ID and revision.
-3. Store enqueues a message carrying its reference in the combined queue.
-4. Successful enqueue makes that buffer immutable until explicit release.
-5. Failed enqueue does not transfer ownership; the store may refresh/reuse that
-   unpublished buffer, keeping the corresponding publication work outstanding.
+1. Apply an accepted edit to the authoritative original.
+2. Obtain a free playback buffer and copy the desired original into it.
+3. Enqueue its reference and flags.
+4. Once enqueue succeeds, do not modify that buffer until explicitly returned.
 
-Release:
+Failed enqueue transfers nothing. Store may refresh/reuse that unpublished buffer.
 
-1. Audio ceases all use of a superseded, cancelled or no-longer-needed reference.
-2. It returns that exact buffer identity/revision to the store.
-3. Only after consuming the release may the store overwrite the allocation.
+Use a separate audio → store SPSC release queue of capacity **5**. Audio returns
+exact buffer identities after ceasing all use of them. Store consumes a release
+before reusing that allocation. At most one release per allocation can be
+outstanding, so five entries cover the entire pool without dropping releases.
 
-Consuming a queue message does not itself return a buffer: it may now be current
-or pending. Queue emptiness is not an ownership signal. Replacing/cancelling a
-pending reference, updating a reference, or switching away from current can free
-buffers. Unused snapshots also require explicit return.
+Audio never allocates, locks, waits, logs, copies a whole pattern or destroys
+pattern ownership. Machines must not retain references after release; sampler
+triggers already copy the step values they need.
 
-The fixed pool, not queue length, bounds snapshot memory. When audio holds only
-current, two buffers may be queued. When it holds current and pending, only one
-additional buffer can be queued. A deeper command queue still has room for controls.
+## Audio snapshot handling
 
-Audio never copies or destroys patterns, resizes buffers, allocates, or performs
-owning reference-count operations. Machines must not retain a pattern reference
-after audio reports its release. The current sampler copies trigger values;
-future machines must obey the same lifetime rule or explicitly retain resources.
-
-## Combined store-to-audio queue
-
-Use one capacity-64 SPSC FIFO. Store is the only producer; audio the only consumer.
-UI does not publish directly to it. Its entries contain controls or snapshot
-references, not inline pattern copies.
-
-Conceptual messages:
-
-- **Select:** target ID, prepared initial snapshot reference, selection request ID,
-  and deferred/immediate mode. Selection and its initial contents are one message.
-- **Update:** snapshot reference for a pattern already current or pending. This
-  changes contents without creating a new selection or changing its request ID.
-- **Transport:** controls such as play/stop/tempo; no snapshot buffer required.
-
-Queue capacity and available snapshot count are independent. There is no global
-one-snapshot-in-flight rule and no length-one publication queue.
-
-The exact handling of an attached snapshot when a selection names the actual
-playing pattern remains to be confirmed below. Cancellation must not schedule a
-new deferred switch or lose an accepted content update.
-
-### Callback processing
-
-At callback entry, observe queue depth once and process that captured batch in
-FIFO order before rendering. Multiple controls and snapshot adoptions may be
-processed in the same callback. Later arrivals wait for a later callback.
-
-Selection B followed by an edit can therefore appear as:
-
-```text
-Select B, snapshot B revision 11
-Update B, snapshot B revision 12
-```
-
-Audio first makes revision 11 pending, then replaces it with revision 12 and returns
-the revision 11 buffer. At the musical boundary, the pending snapshot becomes
-current. No cross-queue revision dependency is needed.
-
-An update replaces a matching current or pending reference, does not regress its
-revision, and returns the old snapshot. If an update no longer matches either
-reference, return the incoming buffer without changing selection; this is a
-defensive fallback, not the normal store publication policy.
-
-## Selection, replacement and musical timing
-
-| Situation | Audio action |
+| Incoming message | Action |
 |---|---|
-| A playing; select B with B snapshot | B becomes pending |
-| B pending; select C with C snapshot | Release pending B; C replaces it |
-| A playing; select A | Cancel and release pending, if any |
-| Deferred boundary reached | Release old current; move pending to current; clear pending |
-| Update pending B | Replace pending contents; keep selection timing/request identity |
-| Update playing B | Replace current contents at callback entry |
-| Immediate select B | Replace current at callback entry, with no musical-boundary wait |
-
-Preserve the existing boundary rule during migration. Defining pattern length
-when tracks differ is separate work. Deferred switching while stopped waits for
-playback. Preserve transport position and sample tails.
-
-### Mid-callback edit example
-
-```text
-Audio starts callback and processes queued messages.
-Audio renders A; B revision 11 is pending.
-Store receives a paste into B and queues revision 12.
-Audio reaches the boundary and activates pending B revision 11.
-Next callback adopts B revision 12 if that update was queued in time.
-```
-
-This short stale-content interval is accepted. Do not miss a whole musical cycle
-waiting for the newer revision, and do not poll the queue midway through rendering.
-An update queued after the callback's depth observation cannot affect that batch.
-
-If revision 12 is queued by the next callback's depth observation, adopt it before
-rendering that block. Store scheduling, pool exhaustion or preparation work can
-make it later; there is no unconditional one-block delivery guarantee.
-
-### Store publication policy
-
-Store retains all edits, but publishes content updates only for patterns still
-playing or pending. Once selection C supersedes pending B, do not send further
-updates to B unless B is still playing. B's original remains up to date for a
-future selection.
-
-An update already enqueued before Select C cannot be retracted and remains before
-it in FIFO order. Selection messages carry the initial snapshot, so there is no
-separate initial publication that can arrive before/after its selection.
-
-Store must distinguish requested selection from audio's confirmed playing state.
-A command in flight does not prove a boundary switch has happened. Reconciliation
-and scheduling under pool exhaustion remain to be specified below.
-
-Outcomes distinguish switched, cancelled and superseded requests. Include the
-responsible request ID and actual playing state. Old outcomes may update known
-playback state but cannot clear a newer UI request, including B -> C -> B.
-Acknowledgements never change the displayed editing selection.
-
-## Store batching and wake-up
-
-Editing originals, publishing snapshots and processing releases are independent.
-Do not wait after each edit for the next audio callback.
-
-Each store pass:
-
-1. Drain snapshot releases and reliable audio outcomes.
-2. Observe the UI request queue depth once and process that batch in FIFO order.
-3. Apply valid edits to originals and record outstanding publication work.
-4. Where buffers and queue space permit, publish prepared selections/updates.
-5. Otherwise keep the originals current and retry publication later.
-
-A single queued edit may publish alone. Several already waiting edits can be
-combined into one resulting snapshot. Later edits accumulate in originals while
-older snapshots are queued/current/pending. Do not introduce a batching timer.
-
-Only unpublished work may be coalesced. The resulting snapshot contains the effects
-of accepted edits; intermediate snapshots may be skipped. Do not coalesce arbitrary
-transport events or commands whose individual occurrence matters.
-
-Use a condition variable with timed waits, not a separate timer thread:
-
-- UI enqueue updates a mutex-protected wake predicate and notifies the store.
-  Avoid a lost notification between checking work and sleeping.
-- Audio only pushes non-blocking return records. It never locks or notifies the
-  condition variable.
-- While awaiting audio progress, use a timed wait initially 1 ms. Measure it rather
-  than treating 1 ms as a timing guarantee.
-- Pending output-capacity retries also need a wake/retry path.
-- When nothing requires retry or audio progress, wait for UI work or shutdown.
-- Never sleep with actionable queued work or busy-spin when another thread must
-  free capacity first.
-
-Finite request/control queues can still exert backpressure. A full snapshot pool
-alone does not prevent editing originals or serving UI snapshots.
-
-## UI editing and snapshots
-
-Store serves separate non-real-time editing snapshots from the originals. They
-are not borrowed playback-pool buffers and do not wait for callbacks.
-
-UI holds one editing pattern and its remembered-note metadata. On selection:
-
-1. Send a request tagged with its request ID.
-2. Store serves an editing snapshot and prepares/forwards playback selection.
-3. These complete independently; editing need not wait for playback handoff.
-4. Only a response matching the latest editing selection may replace the UI copy.
-
-While loading, further pattern selections remain allowed but edits to the old
-shown pattern are temporarily disabled. Show editing, playing and pending state
-separately. Preserve the deliberate clipboard independently of selection changes.
-
-Optimistic editing:
-
-1. Enqueue an explicit desired edit with pattern and request IDs.
-2. On success, immediately change the UI copy.
-3. On queue-full, leave it unchanged and provide retry feedback.
-4. Store validates/applies requests to originals in FIFO order, regardless of
-   whether the edited pattern is playing or pending.
-
-Bulk operations are coherent and prepared outside audio. Cancelled or replaced
-selections do not discard their stored edits.
-
-### Rejected optimistic edits: resynchronisation barrier
-
-Use a FIFO resynchronisation barrier, not an edit-replay journal.
-
-1. Store reports the rejected edit with its pattern and request IDs.
-2. If it affects the current editing copy, UI temporarily pauses edits to that
-   pattern and queues a resync request after its already-submitted edits.
-3. Store processes preceding requests in order, applying valid edits and rejecting
-   invalid ones, then serves an authoritative snapshot when it reaches the barrier.
-4. UI installs that snapshot only if it still belongs to the current editing
-   selection and resync request, then resumes editing.
-
-The response therefore includes later valid edits submitted before the barrier;
-UI does not replay or resend them. Do not roll back immediately to an older copy.
-If the request queue is full, remain paused and retry enqueueing the barrier rather
-than dropping it or changing the authoritative originals.
-
-Pattern selection remains available during recovery. A response for an old editing
-selection cannot replace a newly selected pattern. A rejection concerning a pattern
-no longer being edited does not overwrite or pause the unrelated current editing
-copy; selecting that pattern later obtains authoritative contents as usual.
-
-Recovery depends only on the UI/store exchange, never on an audio callback.
-
-## Reliable returns and capacity
-
-Use two separate SPSC channels from audio to store:
-
-- **Snapshot releases: capacity 3.** There are exactly three snapshot allocations.
-  Each can have at most one outstanding release record: the store must consume
-  that record before reusing and publishing the buffer again. This bounds release
-  records independently of control traffic.
-- **Reliable control outcomes: capacity 64.** A separate queue for switched,
-  cancelled, superseded and other required control results.
-
-Audio is the sole producer and store the sole consumer of both channels. A control
-outcome backlog cannot occupy snapshot-release capacity. Store drains both channels
-independently of UI response delivery.
-
-Records contain identifiers/references, not owning pattern objects.
-
-### Control-result credits
-
-Allow at most 64 outstanding controls requiring a result, including queued controls
-and a pending selection. Reserve one final-result credit before successful control
-submission. A pending selection retains its credit until switched, cancelled or
-superseded. Each such control produces exactly one final outcome.
-
-Replacing/cancelling a pending selection can complete the older request as well
-as the newer control; each has its own already-reserved credit. Snapshot-only
-updates consume no control-result credit; their releases use the capacity-3 channel.
-
-When queue capacity or credits are exhausted, retain/retry unsent work rather than
-blocking audio or discarding results. Failed enqueue does not consume a credit.
-A credit remains outstanding until the store has safely handled its final outcome;
-if onward delivery is blocked, do not replenish credits while accumulating an
-unbounded store-side result backlog. UI-facing delivery details remain open.
-
-The capacity-64 outcome queue can therefore hold one final outcome for every
-outstanding control. A deferred boundary completion does not depend on a timely
-UI poll. These are message limits, not additional pattern allocations.
-
-- No buffer release may be dropped or overwritten.
-- Return capacity must cover accepted work, including releases caused by pending
-  replacement/cancellation, unused incoming snapshots and boundary activation.
-- Reliable outcome capacity must account for deferred and superseded requests.
-- A musical-boundary switch cannot depend on the GUI draining a queue at that instant.
-- Store must always be able to drain audio returns, even if UI output is blocked.
-- Limit outstanding/staged controls; never accumulate an unbounded backlog.
-- If no snapshot is free, retain latest content in originals; do not allocate a fourth.
-
-Reliable edit/control results are not disposable. Intermediate playheads/meters
-may be skipped. Obsolete UI snapshots may be coalesced, with storage reclaimed
-outside audio. The combined queue and outcome queue are capacity 64, with 64
-control-result credits. UI request/response capacities and onward result-delivery
-accounting remain open; release-channel separation and capacity 3 are agreed.
-
-The callback must not allocate, lock, wait, perform file I/O, log or destroy
-pattern storage. Its queue messages are small and trivially destructible.
-
-## Startup and shutdown
-
-Startup:
-
-1. Initialise eight originals, their revisions and editor metadata.
-2. Allocate exactly three playback snapshots.
-3. Copy the initial playing pattern into one snapshot and establish audio's
-   current reference before activation. Pending starts empty; the other two are free.
-4. Start the store worker and audio.
-5. Request the initial UI editing snapshot.
-
-Shutdown:
-
-1. Stop accepting new UI requests and wake the store.
-2. Stop audio and wait for all callbacks to finish.
-3. Account for all current, pending, queued and returned snapshot buffers.
-4. Stop/join store, then destroy originals, snapshots and channels.
-
-Storage/channels outlive every callback referencing them. Shutdown must not wait
-for a stopped callback to consume a command or return a buffer.
-
-## Implementation boundary and checks
-
-Introduce store ownership/worker and editor/store/audio message definitions.
-Update GridWidget to use one editing copy, sequencer to use current plus optional
-pending references, and startup/preview/fixtures to use the same protocols.
-
-Do not combine this with a source-tree reorganisation, persistence, networking,
-machine replacement, chunking or transport timing rewrite.
-
-Acceptance tests:
-
-- Exactly eight originals plus three playback-pool buffers, not three per pattern.
-- Audio holds no bank and at most current plus optional pending references.
-- Published/borrowed contents remain unchanged until explicit release.
-- All copies/destruction occur outside audio; no reuse inferred from queue emptiness.
-- Multiple snapshot messages can occupy the combined queue when buffers permit.
-- Controls consume no buffer unless introducing a snapshot.
-- Edits continue in originals when all snapshots are occupied.
-- Initial selection and its snapshot are one message; later updates preserve FIFO.
-- Replacement, cancellation, repeated IDs and stale outcomes behave correctly.
-- A mid-callback edit does not postpone the musical switch by a cycle.
-- A queued update is adopted before rendering the next observed callback batch.
-- Updates are not published for inactive originals merely because they were edited.
-- Rapid UI selections reject stale editing snapshots without waiting for callbacks.
-- Optimistic queue-full changes no UI data; rejection recovery preserves valid edits.
-- Remembered notes, clear, selection toggle, paste and clipboard behaviour survive.
-- Wake-ups are not lost, returns are noticed without audio notification, idle does
-  not busy-spin, and shutdown works with outstanding work.
-- Saturating channels loses no release/outcome and allocates no extra snapshots.
-
-Build both executables and run existing regressions throughout. Measure callback
-reference/queue work separately from store copying and wake-up latency.
-
-## Open decisions — discuss before implementing
-
-1. **UI-facing capacities and delivery.** Set UI request/response capacities and
-   bounded handling of results/snapshots when UI delivery is blocked. Combined
-   audio commands and control outcomes are capacity 64, with 64 result credits;
-   snapshot releases have their own capacity-3 queue. Those limits are settled.
-2. **Store scheduling with an exhausted pool.** Specify how unsent selections,
-   playing/pending dirty updates and later controls are staged and ordered. Define
-   handling of newer selections before an older one could acquire a buffer, and
-   reconcile in-flight selections with confirmed audio state. Do not resurrect
-   an obsolete pending selection or publish unrelated inactive patterns.
-3. **Snapshot attached to selection of the playing ID.** Cancellation itself is
-   agreed. Decide whether a newer incoming snapshot also updates current, or is
-   returned with explicit continued publication of its still-unapplied edits.
-   It must not silently lose those edits, regress current contents or leak buffers.
-
-The combined FIFO, exactly three snapshots total in addition to eight originals,
-current/optional-pending audio references, full copies outside audio, optimistic
-UI, FIFO-barrier rejection recovery, a separate capacity-3 snapshot-release queue,
-and timed wake-up are settled. There is no minimum-revision deadline decision
-and no separate publication queue: those were superseded by the agreed model.
-
-## Future remote UI and limits
-
-The UI/store protocol is the future network boundary. Requests, snapshots and
-outcomes can be serialized. Pointers remain inside the local store/audio
-connection. Reconnection, access control and multi-editor conflicts are future work.
-
-Whole-pattern preparation can eventually slow the store thread. Measure that
-separately from audio performance. Alternative storage designs are outside scope.
+| Deferred select of another pattern | Release old pending if present; install incoming as pending |
+| Immediate select of another pattern | Release old pending and current; install incoming as current |
+| Select actual current pattern | Release/clear pending; replace current with incoming contents and return old current |
+| Update matching current | Replace current; return old current |
+| Update matching pending | Replace pending; return old pending |
+| Update matching neither | Return incoming buffer without installing it |
+
+An update does not create a selection or change its timing. Audio holds no bank
+or references for the other stored patterns.
+
+At the existing deferred-switch boundary, release old current, move pending to
+current and clear pending. Preserve the existing track-zero boundary condition,
+transport positions, track scheduling and sample tails. Deferred switches wait
+while sequencing is stopped. Do not combine this change with a scheduling fix.
+
+### Example
+
+A is playing. Store edits A and queues its snapshot, then receives selection B
+and queues B with `select = true`.
+
+At the next queue check audio:
+
+1. Adopts edited A and returns old A.
+2. Installs B as pending.
+3. Processes audio.
+4. If the boundary occurs, makes B current and returns edited A.
+
+If a B edit arrives after a chunk's queue check, audio may switch using older B
+contents. Adopt the update at the next queue check if available. This short stale
+interval is accepted; do not postpone the switch by a pattern cycle. Delivery by
+exactly the next chunk cannot be guaranteed if store work or buffers are delayed.
+
+## Audio chunking and telemetry
+
+Process device callbacks in chunks no larger than approximately 5 ms at the active
+sample rate, and check queues before every chunk. Use at least one frame per chunk.
+The chunk size must also fit existing scratch buffers. A larger device callback
+therefore does not postpone all command processing until its end.
+
+Use existing track rendering/summing within each chunk. Do not add queue checks
+inside individual track processing or otherwise rewrite event scheduling.
+
+Audio publishes non-blocking latest-value status after each completed chunk:
+playing state, actual current ID, optional pending ID and per-track playheads.
+This is lossy display telemetry, not a reliable outcome or ownership channel.
+Keep pattern ID and step packed together as today; independent tracks need not
+form a coherent snapshot. Never use telemetry to decide a buffer is reusable.
+
+Store polls/forwards telemetry while playback or pending work requires refresh;
+it must not sleep indefinitely during steady playback. UI redraw/polling continues
+at its normal cadence. No audio acknowledgements are required for every event or
+snapshot; display actual playing/pending state from latest status.
+
+## Store work and backpressure
+
+Store applies UI requests in FIFO order. For each pass, drain releases, process the
+currently queued UI batch, then attempt outstanding audio output. Several edits
+already waiting may become one latest snapshot; no batching-delay timer.
+
+Pool/queue exhaustion must not block edits to originals or serving editing copies.
+Keep unpublished contents in the originals, not an unbounded snapshot backlog.
+Never allocate a sixth playback buffer. A successfully queued message cannot be
+retracted or overwritten.
+
+Keep only the latest unsent playback selection; a newer selection supersedes an
+older unsent one. Preserve edits to both originals. Pending publication is work
+to retry, not a reason to spin. Do not drop an accepted start/stop/tempo request
+because the event queue is temporarily full; finite UI request capacity supplies
+backpressure rather than an unbounded staging queue.
+
+Publish dirty updates for patterns with outstanding references that may still be
+current, pending or in flight. Store tracks each occupied buffer's pattern ID
+until its release is consumed; latest telemetry is not a lifetime signal.
+This conservative set can include a superseded target until audio returns it.
+Audio safely returns unmatched updates. Do not publish all eight originals on
+every edit; future selections always copy the latest original.
+
+### Publication priority
+
+When a buffer and snapshot queue slot become available, publish the latest unsent
+selection before dirty content updates. The next musical boundary may be close;
+getting the selection to audio takes priority over refreshing existing contents.
+Prepare its snapshot from the latest authoritative original, including edits
+already processed by the store. This does not reorder messages already queued.
+
+After submitting the selection, use remaining capacity for relevant dirty updates.
+An unmatched update returned by audio requires no immediate resend: its original
+remains authoritative, and a future selection copies its latest contents.
+
+## Store wake-up
+
+UI enqueue updates a mutex-protected wake predicate and notifies the store's
+condition variable. Avoid lost wake-ups. Audio only pushes releases and publishes
+atomics; it never takes that mutex or notifies the condition variable.
+
+Use timed waits initially 1 ms while waiting for audio progress or output capacity.
+Include telemetry refresh during playback. Wait indefinitely only when idle with
+no refresh/retry needed. No separate timer thread and no busy-spinning.
+
+## UI ↔ store
+
+This boundary retains the agreed editing behaviour. It is independent of playback
+buffer availability and musical boundaries.
+
+| Channel | Capacity |
+|---|---:|
+| UI requests | 64 |
+| Reliable store results | 64 |
+| Editing snapshots | 1 |
+
+Allow at most 64 UI requests awaiting a terminal result. Successful admission
+reserves a result credit; failed admission changes neither UI data nor credits.
+Return the credit when UI consumes the terminal result, including ignored stale
+results. Each request gets exactly one result for store acceptance/rejection or
+supersession; selection completion here means store handling, not audio activation.
+Audio playback state is shown separately through telemetry.
+
+Editing snapshots are separate non-real-time copies, not playback-pool buffers.
+While their queue is full, retain only the latest unsent snapshot requirement.
+Never overwrite a queued response. Tag responses with editing-selection and,
+where applicable, resync request identities. Retry publication even if no further
+UI request arrives. A terminal result alone does not finish loading a snapshot.
+
+### Editing selection
+
+Request another pattern's editing copy immediately, without waiting for audio.
+Track requested selection separately from the loaded copy's identity. While
+loading, disable edits and copy actions on the old displayed contents; further
+pattern selections remain available. Install only the latest matching editing
+snapshot. Keep the deliberate clipboard across selection changes.
+
+### Optimistic edits and validation
+
+After successful request enqueue, apply the desired edit to the UI copy. Queue
+full or exhausted result credits leaves it unchanged and displays retry feedback.
+
+Store validates pattern/track/step/region bounds and applies each operation
+atomically, including metadata. Local operations carry explicit desired values
+and affect only their destination cells; do not send an entire optimistic pattern
+for an unrelated rectangle edit. Whole-pattern paste intentionally replaces the
+whole pattern, including hidden tracks and track lengths. Preserve existing
+selection clipping and clipboard behaviour.
+
+Remembered notes stay in the store and accompany editing/recovery snapshots:
+clear/toggle-off preserve remembered pitches; toggle-on restores them. Paste
+updates metadata only in its destination, using default note 60 for pasted empty
+cells. Clipboard copies step/pattern contents, not hidden remembered-note metadata.
+UI holds metadata only for its current editing copy.
+
+### Rejected edit recovery
+
+Use the agreed FIFO resync barrier, not an edit-replay journal:
+
+1. Report rejection with editing-session and request identity.
+2. UI pauses edits to the affected current editing session.
+3. Queue one resync barrier after already-submitted edits; retry if capacity or
+   credits are unavailable.
+4. Store processes preceding valid edits and returns authoritative pattern plus
+   metadata at the barrier.
+5. UI installs only a matching current-session recovery response, then resumes.
+
+Further selections remain available. Old-session responses cannot replace a new
+copy, including a later visit to the same pattern. Delayed rejections already
+covered by the barrier must not start repeated recovery. All edit entrypoints,
+including mouse actions, obey loading/recovery state. Recovery does not wait for
+an audio callback.
+
+## Startup, shutdown and migration
+
+Startup: initialise originals/metadata, allocate five snapshots, copy the initial
+pattern into current, leave pending empty and four buffers free. Establish channel
+lifetimes before starting store/audio; obtain the initial UI copy from store.
+
+Shutdown: stop admitting UI work, wake store, stop audio and join all callbacks,
+then stop/join store and destroy channels/storage. Once audio is stopped, reclaim
+its current/pending and queued references without requiring another callback.
+Do not let shutdown retries wait forever for a stopped consumer. Exception paths
+must preserve this ordering too.
+
+Change the existing GridWidget bank reference to one editing copy, move edit
+application/metadata into store, and replace sequencer's bank with borrowed
+current/pending references. Replace old command markers, callback-side bulk
+copies and switch acknowledgement backpressure; do not retain parallel old paths.
+Preview must use the same store/UI protocol, with a non-rendering audio consumer
+that returns snapshots and publishes status. Update existing fixtures and older
+docs that describe the superseded ownership/delivery model during implementation.
+
+## Verification for implementation
+
+- Run both executables and existing regressions; exercise actual TUI selection,
+  editing, paste, play/stop and playheads.
+- Assert five-buffer accounting through queued/current/pending/released/free roles;
+  no buffer reuse before release and no copies/allocations in audio.
+- Exercise the A-edit/B-select example, pending replacement/cancellation,
+  immediate selection, current/pending updates and unmatched update return.
+- Fill snapshot queue/pool: originals remain editable, latest unsent selection
+  survives, accepted events are retained, and publication resumes after release.
+- Exercise large device callbacks: queue checks happen between bounded chunks.
+- Preserve existing transport timing tests; separately measure chunking effects
+  on track rendering before claiming equivalent playback behaviour.
+- Exercise stale editing snapshots, rejection plus unrelated valid edit, resync
+  with full channels, metadata restoration and blocked UI delivery.
+- Verify telemetry continues during steady playback and shutdown works with full
+  queues, a sleeping store and outstanding snapshots.
+
+No live-audio performance guarantee follows from UI/audio cadence alone. Measure
+latency and callback work, but do not build a generalized messaging framework.

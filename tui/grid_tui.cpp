@@ -37,7 +37,7 @@ struct Terminal {
         define_key("\033[1;6B", CTRL_SHIFT_DOWN);
         define_key("\033[1;6D", CTRL_SHIFT_LEFT);
         define_key("\033[1;6C", CTRL_SHIFT_RIGHT);
-        timeout(30); // Refresh telemetry even when no keys arrive (~33 FPS).
+        timeout(25); // Service store replies even when no keys arrive.
         curs_set(0);
         mousemask(ALL_MOUSE_EVENTS, nullptr);
         mouseinterval(200);
@@ -83,6 +83,7 @@ void draw_status_bar(const GridWidget& widget) {
     const char* text = widget.awaiting_pattern_ ? "Select pattern 1-8 | Esc: cancel"
         : widget.awaiting_copy_ ? "Copy: p = pattern | s = selection | Esc = cancel"
         : widget.message_ ? widget.message_
+        : widget.loading() ? "Loading editing copy - edits and copy disabled"
         : widget.switch_pending_ ? "Pattern switch pending" : "";
     if (width > 2) mvaddnstr(0, 1, text, width - 2);
     attrset(A_NORMAL);
@@ -114,7 +115,7 @@ void draw(const GridWidget& widget, const sequencer_status& status) {
         attrset(A_BOLD);
         mvaddstr(y, 2, names[row]);
         const auto current_step = status.current_step(row,
-            static_cast<uint8_t>(widget.selected_pattern_), playing);
+            static_cast<uint8_t>(widget.loaded_pattern_), playing && !widget.loading());
         for (size_t col = 0; col < GridWidget::COLS; ++col) {
             const bool active = widget.grid_state_[row][col];
             const bool selected = row == widget.current_row_ && col == widget.current_col_;
@@ -198,8 +199,7 @@ void run_grid_tui(GridWidget& widget, const sequencer_status& status) {
             if (dx < 0 || dy < 0 || dx % PITCH >= CELL_W || dy % ROW_H != 0) break;
             const auto row = static_cast<size_t>(dy / ROW_H), col = static_cast<size_t>(dx / PITCH);
             if (row >= GridWidget::ROWS || col >= GridWidget::COLS) break;
-            widget.set_cursor(row, col);
-            widget.togglecell();
+            widget.click_cell(row, col);
             break;
         }
         default: break;

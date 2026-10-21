@@ -1,33 +1,74 @@
 #pragma once
 
-#include "sequencer_command.hpp"
-#include <cassert>
+#include "pattern.hpp"
+#include <cstdint>
 
 namespace bork {
-
+inline constexpr int DEFAULT_NOTE_NUMBER = 60;
+using remembered_notes = std::array<std::array<int, MAX_PATTERN_STEPS>, 8>;
 struct pattern_edit {
-    uint8_t pattern_id{};
-    pattern value{};
+    enum class kind : uint8_t { region, paste_region, paste_pattern };
+    kind type{kind::region};
+    size_t top{}, left{}, rows{1}, cols{1};
+    pattern value{}; // Region cells use absolute destination coordinates.
 };
-static_assert(std::is_trivially_copyable_v<pattern_edit>);
-inline constexpr size_t PATTERN_EDIT_QUEUE_CAPACITY = 4;
-using pattern_edit_queue = rigtorp::SPSCQueue<pattern_edit>;
-
-// Sole producer only, without reentrant submissions. Consumer can only free
-// space between these checks and publication, so both pushes must succeed.
-// Publish the payload first; audio accesses it only upon consuming its marker.
-inline bool try_submit_pattern_edit(command_queue& commands, pattern_edit_queue& edits,
-                                    const pattern_edit& edit) noexcept {
-    if (commands.size() >= commands.capacity() || edits.size() >= edits.capacity())
+inline remembered_notes remember_notes(const pattern& value) noexcept {
+    remembered_notes notes{};
+    for (size_t row = 0; row < value.tracks_.size(); ++row)
+        for (size_t col = 0; col < MAX_PATTERN_STEPS; ++col) {
+            const int note = value.tracks_[row].steps_[col].note_;
+            notes[row][col] = note ? note : DEFAULT_NOTE_NUMBER;
+        }
+    return notes;
+}
+inline bool valid_pattern_edit(const pattern_edit& edit) noexcept {
+    if (edit.type == pattern_edit::kind::paste_pattern) {
+        for (const auto& track : edit.value.tracks_)
+            if (track.size_ > MAX_PATTERN_STEPS) return false;
+        return true;
+    }
+    if (edit.type != pattern_edit::kind::region && edit.type != pattern_edit::kind::paste_region)
         return false;
-    const bool payload_pushed = edits.try_push(edit);
-    assert(payload_pushed);
-    const bool marker_pushed = commands.try_push(
-        sequencer_command{.type_ = sequencer_command::type::update_pattern});
-    assert(marker_pushed);
-    (void)payload_pushed;
-    (void)marker_pushed;
-    return true;
+    return edit.top < 8 && edit.left < MAX_PATTERN_STEPS && edit.rows > 0 && edit.cols > 0 &&
+        edit.rows <= 8 - edit.top && edit.cols <= MAX_PATTERN_STEPS - edit.left;
+}
+// Caller validates first; UI uses the same operation for its optimistic copy.
+inline void apply_pattern_edit(pattern& destination, remembered_notes& notes,
+                               const pattern_edit& edit) noexcept {
+    if (edit.type == pattern_edit::kind::paste_pattern) {
+        destination = edit.value;
+        notes = remember_notes(destination);
+        return;
+    }
+    for (size_t row = edit.top; row < edit.top + edit.rows; ++row)
+        for (size_t col = edit.left; col < edit.left + edit.cols; ++col) {
+            const auto value = edit.value.tracks_[row].steps_[col];
+            destination.tracks_[row].steps_[col] = value;
+            if (value.note_ || edit.type == pattern_edit::kind::paste_region)
+                notes[row][col] = value.note_ ? value.note_ : DEFAULT_NOTE_NUMBER;
+        }
 }
 
+struct store_request {
+    enum class kind : uint8_t { select, edit, resync, start, stop, tempo };
+    kind type{kind::select};
+    uint64_t request_id{}, session{};
+    uint8_t pattern_id{};
+    bool deferred{true};
+    float tempo{120};
+    pattern_edit edit{};
+};
+struct store_result {
+    store_request::kind type{};
+    uint64_t request_id{}, session{};
+    uint8_t pattern_id{};
+    bool accepted{};
+};
+struct editing_snapshot {
+    uint64_t session{}, request_id{};
+    uint8_t pattern_id{};
+    bool recovery{};
+    pattern value{};
+    remembered_notes notes{};
+};
 } // namespace bork

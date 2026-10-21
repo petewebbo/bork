@@ -41,6 +41,7 @@ CPMAddPackage(
 
 set(CURSES_NEED_NCURSES TRUE)
 find_package(Curses REQUIRED)
+find_package(Threads REQUIRED)
 
 add_executable(bork src/main.cpp tui/grid_tui.cpp)
 target_include_directories(bork PUBLIC
@@ -52,12 +53,12 @@ target_link_libraries(bork PRIVATE
     portaudio_static
     AudioFile
     SPSCQueue::SPSCQueue
+    Threads::Threads
     ${CURSES_LIBRARIES}
 )
 
 include(CTest)
 if(BUILD_TESTING)
-    find_package(Threads REQUIRED)
     add_executable(bork_tests
         tests/main.cpp
         tests/portaudio_test.cpp

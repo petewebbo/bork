@@ -28,13 +28,12 @@ stream. The mono sequencer mix is sent to every output channel.
 ## Pattern UI
 
 The main application displays a five-track, sixteen-step ncurses grid: Kick,
-Snare, Clap, HH and Open HH. It needs a 90 × 15 terminal. The initial grid reads
-a UI-side display cache, initialised from the audio-owned eight-pattern bank
-before audio starts. Pattern 1 contains the startup pattern; patterns 2–8 start
-empty. Edits go through an SPSC command queue rather than accessing live audio state.
+Snare, Clap, HH and Open HH. It needs a 90 × 15 terminal. The grid loads one
+editing copy from the dedicated store; all eight stored patterns start empty.
+Edits go through the store protocol rather than accessing live audio state.
 
 - Click a cell to select/toggle it; **x** toggles every selected cell independently.
-- **Space** toggles sequencer playback through the command queue.
+- **Space** toggles sequencer playback through store start/stop requests.
 - **Arrows** move; **Shift+arrows** extend a rectangular selection. Normal
   movement/click collapses it. **Ctrl+Shift+arrows** extend selection straight to
   the grid edge in that direction, preserving the anchor. **Home/End** jump to
@@ -75,86 +74,60 @@ Toggling off preserves the note for re-enabling, as well as velocity and length.
 velocity 100 if no velocity was set. Clicks in cell gaps are ignored. Resizing
 the terminal preserves the pattern.
 
-## UI → audio commands
+## UI, store and audio
 
-The TUI is the sole producer; the PortAudio callback is the sole consumer. A
-1024-command `rigtorp::SPSCQueue` is allocated before audio starts. The UI owns a
-storage bank, and only updates it after non-blocking `try_push` succeeds. A full
-queue rejects the edit and displays a retry message; it never silently drops an
-edit already reflected in the UI. Clear-row is one command, not sixteen edits.
+A dedicated pattern-store thread owns eight editable patterns and remembered-note
+metadata. The UI holds one editing copy plus its deliberate clipboard. Edits are
+optimistic only after successful request admission; queue-full leaves the display
+unchanged. Selecting another pattern loads its editing copy independently of audio.
+Editing/copying is disabled while that copy is loading or recovering from rejection.
 
-At the start of each audio callback, before rendering any tracks, the sequencer
-reads the queue depth once and consumes up to that many commands using `front`/`pop`.
-Commands arriving after that observation wait until the next callback. If the
-switch-response queue is full, processing stops before the next switch command;
-that command and everything after it remain queued until the UI drains responses. Work is
-bounded by the 1024-command capacity, not a smaller per-block cap; a full backlog
-can therefore take more callback time. Handlers perform bounded work
-with no allocation, locking or logging. Commands are explicit `set_step`,
-`clear_track`, and `set_tempo` values (tempo is supported by the protocol, not yet
-exposed in the UI). Indices and tempo values are validated by the consumer.
-The queue outlives the audio client, including exception-path shutdown.
+UI requests and reliable results have capacity 64 with 64 outstanding-request
+credits. Editing snapshots use a separate capacity-one channel. Rejected edits
+recover through a FIFO authoritative-resync barrier, preserving later valid edits.
+Local edits affect only their destination region; whole-pattern paste intentionally
+includes hidden tracks and track metadata.
 
-Paste, multi-cell toggle and multi-cell clear use a separate four-entry pattern
-payload SPSC queue. Each payload contains the
-complete resulting pattern and its pattern ID. The sole producer
-first checks both queues have space, publishes the payload, then publishes an
-`update_pattern` marker in the regular command queue. Consumer activity can only
-free space between those checks and pushes; submission must not be reentrant.
+The store owns five shared playback snapshot buffers. Audio borrows only current
+and optional pending references. A capacity-three snapshot queue carries immutable
+references with selection flags; a separate capacity-64 event queue carries explicit
+start/stop and tempo (tempo is not yet exposed in the UI). A capacity-five release
+queue returns buffers to the store. All pattern copying occurs on the store thread.
+Published buffers cannot be overwritten until explicitly returned.
 
-Audio consumes one payload only when it encounters its command marker, preserving
-ordering with activation and single-step edits. It copies matching payloads into
-the named stored pattern, whether playing, pending or neither. Invalid pattern
-IDs are discarded, but every payload is popped. Queue pop
-handles memory reuse: no edit-slot bookkeeping or edit-completion queue exists.
-UI storage changes only after successful submission. If either queue is full,
-the entire edit is rejected before publishing anything.
+If buffers are busy, edits accumulate in originals. The latest unsent selection
+takes priority over content refreshes when publication can resume. Audio never
+waits for UI/store progress, copies a whole pattern, locks or allocates.
 
-Both queues allocate their storage before audio starts; push/front/pop do not
-allocate. The current fixed-size pattern is 1,568 bytes, and the payload queue
-holds four entries. Audio still performs a full-pattern copy for these edits;
-revisit its representation/budget as pattern size grows.
+Device callbacks are split into chunks of at most approximately 5 ms, bounded by
+scratch capacity. Before each chunk, audio drains the observed event batch, then
+the observed snapshot batch. These queues do not have a shared ordering. Updates
+arriving after a queue check wait for a later chunk.
 
-After activation only the audio thread accesses live sequencer state. `inc/sequencer_status.hpp` publishes independent atomic runtime telemetry.
-The header shows the sequencer's actual PLAYING/STOPPED state, published by the
-audio callback after processing commands. The lifecycle owner clears it after
-shutdown; the standalone preview stays stopped.
-The UI refreshes status and polls switch acknowledgements every 30 ms without
-reading live engine fields. Each visible row shows its current step in soft red,
-including empty steps. The cursor/selection backgrounds and cursor underline
-are preserved. Stopped playback hides the playhead; resuming retains position.
-
-Audio publishes the last step reached per track once after each complete audio
-callback. Pattern ID and step share a lock-free 32-bit atomic, so the UI ignores
-positions from a different displayed pattern during a switch. Rows may advance
-independently; no coherent cross-track snapshot or status queue is required.
-Colour-limited terminals fall back to standard red, monochrome to bold/underline.
-The standalone preview has no playhead. Display timing is approximate: UI refresh
-and device output buffering add latency; audible-output compensation is not yet
-implemented.
-Quitting stops audio; remaining commands need not be applied. This is an
-in-process thread boundary, not an IPC transport. Adding another producer or
-consumer would violate the SPSC contract.
+Audio publishes playing/current/pending state and packed pattern-ID/step telemetry
+after each chunk. Store forwards it; UI polls/redraws at 25 ms intervals without
+reading mutable engine fields. Soft-red per-track playheads preserve cursor and
+selection styling and hide while stopped, loading, or showing another pattern.
+Rows need not form a coherent snapshot. Display buffering adds latency; there is
+no audible-output compensation. The non-rendering preview has no playhead.
 
 ## Pattern switching
 
-Audio owns all eight stored patterns. Selecting a pattern sends only its ID;
-the UI immediately displays and edits its cached copy after successful enqueue.
-There are no shared writable pattern slots and no pattern transfers for selection.
-Edits target the named stored pattern even when it is not playing.
+While A plays, selecting B installs B's attached snapshot as pending; selecting C
+replaces it, and selecting A cancels it while refreshing A's contents. Deferred
+activation preserves the existing track-0 boundary rule. While stopped it waits
+for playback. Immediate selection remains supported by the store protocol.
 
-While A plays, selecting B queues B; selecting C replaces the pending selection
-with C; selecting A cancels the pending switch. Deferred activation follows the
-existing track-0 cycle-boundary rule. While transport is stopped it waits for
-playback to resume. Transport position and existing sample tails are preserved.
-Immediate activation remains available through the command protocol.
+Updates replace matching current/pending references without creating another
+selection. A newer edit arriving mid-chunk does not delay the musical switch:
+audio activates its available pending snapshot and adopts the update at a later
+queue check. Transport position and existing sample tails are preserved; stop
+pauses sequencing while tails continue to render.
 
-The header separates displayed PATTERN from the last acknowledged Audio pattern
-and marks the latest request pending until completion. Responses report the actual
-playing pattern and switched/cancelled outcome. Each selection has a request ID,
-so older responses update the playing indicator without clearing newer pending
-requests, including repeated selections of the same pattern. Responses no longer
-return slots. See `doc/specs/pattern-storage-and-switching.md`.
+The header separates the requested editing pattern from actual audio state.
+Store acceptance is not an audio switch acknowledgement. Shutdown joins callbacks
+before reclaiming snapshot storage. See
+`doc/specs/2026-10-19-new-architecture.md` for the protocol and ownership contract.
 
 The five sample paths in `src/main.cpp` are absolute; change them to point to
 your files. Samples are not resampled, so use samples matching the output sample
