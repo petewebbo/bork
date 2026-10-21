@@ -7,6 +7,16 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+option(USE_JACK "Build PortAudio's JACK backend" OFF)
+if(USE_JACK)
+    # PortAudio 19.7's CMake build enables JACK only on non-Apple Unix.
+    if(NOT UNIX OR APPLE)
+        message(FATAL_ERROR "USE_JACK requires a non-Apple Unix system with JACK development files")
+    endif()
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(JACK REQUIRED IMPORTED_TARGET jack)
+endif()
+set(PA_USE_JACK ${USE_JACK} CACHE BOOL "Enable PortAudio JACK support" FORCE)
 
 include(FetchContent)
 # PortAudio 19.7 predates CMake 4's minimum-policy requirement.
@@ -28,6 +38,9 @@ FetchContent_Declare(fmt
     GIT_SHALLOW TRUE
 )
 FetchContent_MakeAvailable(portaudio fmt)
+if(USE_JACK)
+    target_link_libraries(portaudio_static PUBLIC PkgConfig::JACK)
+endif()
 include(cmake/SPSCQueue.cmake)
 
 include(cmake/CPM.cmake)
@@ -56,6 +69,9 @@ target_link_libraries(bork PRIVATE
     Threads::Threads
     ${CURSES_LIBRARIES}
 )
+if(USE_JACK)
+    target_compile_definitions(bork PRIVATE BORK_USE_JACK)
+endif()
 
 include(CTest)
 if(BUILD_TESTING)

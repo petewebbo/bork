@@ -18,6 +18,12 @@ The UI requires ncurses headers/libraries (macOS Command Line Tools, or
 ctest --test-dir .build --output-on-failure
 ```
 
+On Linux/non-Apple Unix, `./build.sh USE_JACK` additionally compiles PortAudio's
+JACK backend. Install `pkg-config` and JACK development files first (for example
+`libjack-jackd2-dev` on Debian/Ubuntu). Direct CMake builds use `-DUSE_JACK=ON`.
+Running `./build.sh` without the argument explicitly disables JACK again.
+The pinned PortAudio CMake build does not support this option on macOS/Windows.
+
 All six test suites run in one executable, `./.build/bork_tests`, also registered
 as a single CTest test. It prints each suite name before running its assertions.
 
