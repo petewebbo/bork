@@ -81,7 +81,9 @@ void draw_status_bar(const GridWidget& widget) {
     // Always paint the entire top row, including when there is no message.
     mvhline(0, 0, ' ', width);
     const char* text = widget.awaiting_pattern_ ? "Select pattern 1-8 | Esc: cancel"
-        : widget.awaiting_copy_ ? "Copy: p = pattern | s = selection | Esc = cancel"
+        : widget.awaiting_copy_ ? (widget.selection().multiple()
+            ? "Copy: p = pattern | s = selection | Esc = cancel"
+            : "Copy: p = pattern | s = step | Esc = cancel")
         : widget.message_ ? widget.message_
         : widget.loading() ? "Loading editing copy - edits and copy disabled"
         : widget.switch_pending_ ? "Pattern switch pending" : "";
@@ -171,7 +173,7 @@ void run_grid_tui(GridWidget& widget, const sequencer_status& status) {
             continue;
         }
         if (widget.input_mode_key(key)) continue;
-        if (key == 'q' || key == 'Q' || key == 27) return;
+        if (key == 'q' || key == 'Q') return;
         if (!fits()) continue;
         switch (key) {
         case KEY_UP: widget.move_cursor(-1, 0); break;

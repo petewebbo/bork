@@ -48,7 +48,8 @@ No system clipboard integration or cross-process data.
 ## Copy command mode
 
 - Lowercase `c` enters copy mode. The persistent top status bar displays:
-  `Copy: p = pattern | s = selection | Esc = cancel`.
+  `Copy: p = pattern | s = selection | Esc = cancel` for a multi-cell selection,
+  or `Copy: p = pattern | s = step | Esc = cancel` for the highlighted single cell.
 - While awaiting that choice, input does not edit cells, move the cursor, toggle
   playback or enter pattern selection. Continue polling store responses and status.
 - `p` copies the entire displayed stored pattern, including tracks not currently
@@ -57,7 +58,8 @@ No system clipboard integration or cross-process data.
   copies the current cell.
 - A valid choice replaces the clipboard and exits copy mode. Report the copied
   dimensions/type in the status bar.
-- Escape exits copy mode without changing the clipboard or quitting.
+- Escape exits copy mode without changing the clipboard or quitting. It also
+  cancels pattern-entry mode. Outside a mode Escape does nothing; only q/Q quit.
 - Other keys leave the prompt active. Lowercase `p` in this mode means copy
   pattern, not enter the pattern-selection prompt.
 - There is no clear keybinding. Uppercase `C` and `V` are unbound.

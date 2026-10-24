@@ -59,7 +59,9 @@ Edits go through the store protocol rather than accessing live audio state.
   movement/click collapses it. **Ctrl+Shift+arrows** extend selection straight to
   the grid edge in that direction, preserving the anchor. **Home/End** jump to
   the first/last step.
-- **c**, then **p/s** copies the whole pattern/selection; **Escape** cancels.
+- **c**, then **p/s** copies the whole pattern/selection (or highlighted step when
+  no multi-cell selection exists). The prompt shows **step** or **selection**.
+  **Escape** cancels copy mode without changing the clipboard.
 - **v** pastes. A selection paste starts at the cursor and clips at the visible
   grid edges. A pattern paste replaces the entire displayed pattern, including
   hidden tracks and metadata, independent of cursor position.
@@ -67,7 +69,8 @@ Edits go through the store protocol rather than accessing live audio state.
   for the number; **Escape** cancels. Other keys do not edit or control playback
   while waiting for a number. The bar also shows errors/pending feedback and
   remains visible when empty.
-- **q/Q/Escape** quits and stops audio.
+- **q/Q** quits and stops audio. **Escape** cancels the current input mode;
+  outside a mode it does nothing and never quits.
 
 An active cell under the cursor has a dark-grey background. Multi-cell selection
 uses a light-grey background with an underlined cursor (with basic-colour or

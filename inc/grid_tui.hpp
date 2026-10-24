@@ -171,7 +171,7 @@ public:
         clipboard_type_ = clipboard_type::selection;
         std::snprintf(feedback_.data(), feedback_.size(), "Copied selection: %zu rows x %zu steps",
                       clipboard_rows_, clipboard_cols_);
-        message_ = feedback_.data();
+        message_ = area.multiple() ? feedback_.data() : "Copied step";
     }
     bool paste() {
         if (!editable()) return false;

@@ -25,6 +25,23 @@ struct fixture {
 
 void test_selection_clipboard() {
     {
+        bork::pattern_storage initial{};
+        initial[0].tracks_[0].steps_[1] = {.note_ = 67, .vel_ = 81, .len_ = 9};
+        initial[0].tracks_[0].steps_[2] = {.note_ = 72, .vel_ = 90};
+        fixture f(initial);
+        f.ui.set_cursor(0, 1);
+        assert(f.ui.input_mode_key('c') && f.ui.input_mode_key('s'));
+        f.ui.set_cursor(0, 3);
+        assert(f.ui.paste());
+        f.flush();
+        assert(f.editing().tracks_[0].steps_[3].note_ == 67);
+        assert(f.editing().tracks_[0].steps_[3].vel_ == 81);
+        assert(f.editing().tracks_[0].steps_[3].len_ == 9);
+        assert(f.editing().tracks_[0].steps_[4].note_ == 0);
+        assert(f.ui.input_mode_key('P') && f.ui.input_mode_key(27));
+        assert(!f.ui.awaiting_pattern_ && f.ui.selected_pattern_ == 0);
+    }
+    {
         fixture f;
         f.ui.set_cursor(2, 5);
         f.ui.select_to_edge(0, 1);
