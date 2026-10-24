@@ -59,9 +59,8 @@ Edits go through the store protocol rather than accessing live audio state.
   movement/click collapses it. **Ctrl+Shift+arrows** extend selection straight to
   the grid edge in that direction, preserving the anchor. **Home/End** jump to
   the first/last step.
-- **c** clears the selection, or the current row when only one cell is selected.
-- **C**, then **p/s** copies the whole pattern/selection; **Escape** cancels.
-- **V** pastes. A selection paste starts at the cursor and clips at the visible
+- **c**, then **p/s** copies the whole pattern/selection; **Escape** cancels.
+- **v** pastes. A selection paste starts at the cursor and clips at the visible
   grid edges. A pattern paste replaces the entire displayed pattern, including
   hidden tracks and metadata, independent of cursor position.
 - **P**, then **1–8** selects a pattern. The permanent top status bar prompts

@@ -1,8 +1,8 @@
 # Grid selection and clipboard
 
 Status: implemented.
-Uppercase `C` enters copy mode, uppercase `V` pastes, and lowercase `c`
-clears the selection, or the current row when no multi-cell selection exists.
+Lowercase `c` enters copy mode and lowercase `v` pastes.
+There is no clear keybinding; uppercase `C` and `V` are unbound.
 
 ## Scope
 
@@ -47,7 +47,7 @@ No system clipboard integration or cross-process data.
 
 ## Copy command mode
 
-- Uppercase `C` enters copy mode. The persistent top status bar displays:
+- Lowercase `c` enters copy mode. The persistent top status bar displays:
   `Copy: p = pattern | s = selection | Esc = cancel`.
 - While awaiting that choice, input does not edit cells, move the cursor, toggle
   playback or enter pattern selection. Continue polling store responses and status.
@@ -60,18 +60,14 @@ No system clipboard integration or cross-process data.
 - Escape exits copy mode without changing the clipboard or quitting.
 - Other keys leave the prompt active. Lowercase `p` in this mode means copy
   pattern, not enter the pattern-selection prompt.
-- Lowercase `c` clears the selection/current row outside prompted modes;
-  uppercase `C` is reserved for the copy prompt.
+- There is no clear keybinding. Uppercase `C` and `V` are unbound.
 
 ## Selection editing
 
 - `x` toggles every cell in the selected rectangle independently: active cells
   become empty, and empty cells become active using their remembered/default
   note and velocity. Without multi-selection this edits only the cursor cell.
-- Lowercase `c` clears notes throughout a multi-cell selected rectangle. With no
-  multi-cell selection, it clears the entire current row. Empty cells are harmless.
-  Preserve velocity, length and remembered notes for re-enabling.
-- These actions do not collapse the selection or move the cursor.
+- Toggling does not collapse the selection or move the cursor.
 - Submit each action as one coherent batch, just like paste. If submission fails,
   no selected cell changes in storage or audio; show retry feedback.
 
@@ -92,7 +88,7 @@ pattern switches and remains reusable after paste.
 
 ## Paste
 
-- Uppercase `V`, outside prompted modes, pastes the clipboard into the displayed
+- Lowercase `v`, outside prompted modes, pastes the clipboard into the displayed
   stored pattern. It does not switch patterns or change playback state.
 - Empty clipboard: no edits or commands; show `Clipboard empty`.
 - Selection clipboard: paste its top-left at the cursor. Ignore the destination
@@ -131,8 +127,7 @@ pattern switches and remains reusable after paste.
   includes all pattern data and hidden tracks; rectangular selection remains
   limited to visible cells.
 - Normal movement/click collapses selection; Shift movement extends its anchor.
-- `x` toggles the entire selection. Lowercase `c` clears a multi-cell selection,
-  or the current row otherwise. Uppercase `C` opens copy mode; uppercase `V` pastes.
+- `x` toggles the entire selection. Lowercase `c` opens copy mode; lowercase `v` pastes.
 - Single-cell active cursor stays dark grey; multi-selection uses light grey
   with an underline distinguishing the cursor.
 
@@ -150,12 +145,11 @@ pattern switches and remains reusable after paste.
   cells clear destinations and repeated/overlapping paste works.
 - Whole-pattern paste includes hidden tracks and leaves runtime state unchanged.
 - Clipboard survives pattern changes, cancellation, empty paste and failed enqueue.
-- Selection toggle handles mixed active/empty cells independently; selection
-  clear affects only its extents and preserves note/velocity/length metadata.
-- Uppercase C enters copy mode; uppercase V pastes. Lowercase c clears a
-  multi-cell selection or the current row when selection is a single cell.
-- Either queue being full cannot partially update UI or audio patterns for paste,
-  selection toggle or selection clear.
+- Selection toggle handles mixed active/empty cells independently.
+- Lowercase c enters copy mode; lowercase v pastes. Opening copy mode preserves
+  existing notes. Uppercase C and V have no binding.
+- Queue exhaustion cannot partially update UI or store patterns for paste or
+  selection toggle.
 - Paste following activation affects the intended pattern ID in FIFO order,
   including after switching away and back to the same pattern.
 - Exercise shifted arrows and status prompts in the actual target terminal,

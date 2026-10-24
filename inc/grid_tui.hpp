@@ -48,7 +48,7 @@ public:
             }
             return true;
         }
-        if (key == 'C') {
+        if (key == 'c') {
             if (editable()) awaiting_copy_ = true;
             return true;
         }

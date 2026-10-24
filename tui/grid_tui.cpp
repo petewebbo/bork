@@ -106,7 +106,7 @@ void draw(const GridWidget& widget, const sequencer_status& status) {
              static_cast<int>(widget.playing_pattern_ + 1),
              widget.switch_pending_ ? " | Switch pending" : "");
     attrset(A_NORMAL);
-    mvaddstr(2, 2, "Shift+arrows: select | x: toggle | c: clear | C: copy | V: paste | P: pattern");
+    mvaddstr(2, 2, "Shift+arrows: select | x: toggle | c: copy | v: paste | P: pattern");
     for (size_t col = 0; col < GridWidget::COLS; ++col)
         mvprintw(TOP - 2, LEFT + col * PITCH + 1, "%02d", static_cast<int>(col + 1));
     const auto area = widget.selection();
@@ -190,8 +190,7 @@ void run_grid_tui(GridWidget& widget, const sequencer_status& status) {
         case KEY_END: widget.set_cursor(widget.current_row_, GridWidget::COLS - 1); break;
         case 'x': widget.toggle_selection(); break;
         case ' ': widget.toggleplay(); break;
-        case 'c': widget.clear_selection(); break;
-        case 'V': widget.paste(); break;
+        case 'v': widget.paste(); break;
         case KEY_MOUSE: {
             MEVENT event{};
             if (getmouse(&event) != OK || !(event.bstate & (BUTTON1_CLICKED | BUTTON1_PRESSED))) break;

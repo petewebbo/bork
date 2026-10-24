@@ -108,7 +108,7 @@ void test_selection_clipboard() {
         initial[0].tracks_[7].steps_[15] = {.note_ = 74, .vel_ = 99, .len_ = 13};
         initial[0].tracks_[7].size_ = 12;
         fixture f(initial);
-        assert(f.ui.input_mode_key('C') && f.ui.awaiting_copy_);
+        assert(f.ui.input_mode_key('c') && f.ui.awaiting_copy_);
         assert(f.ui.input_mode_key('x') && f.ui.input_mode_key('q'));
         assert(f.store.outstanding_requests() == 0);
         assert(f.ui.input_mode_key('p') && !f.ui.awaiting_copy_);
@@ -131,7 +131,7 @@ void test_selection_clipboard() {
         assert(f.ui.togglecell() && f.ui.togglecell());
         assert(f.ui.note_number(0, 0) == 67);
         f.flush();
-        assert(f.ui.input_mode_key('C') && f.ui.input_mode_key(27));
+        assert(f.ui.input_mode_key('c') && f.ui.input_mode_key(27));
         assert(!f.ui.awaiting_copy_ && f.ui.paste());
         f.flush();
         // All eight remembered-note rows are replaced, including hidden tracks.
@@ -145,7 +145,7 @@ void test_selection_clipboard() {
         initial[0].tracks_[3].steps_[13] = {.note_ = 82, .vel_ = 70};
         fixture f(initial);
         f.ui.move_cursor(0, 1, true);
-        assert(f.ui.input_mode_key('C') && f.ui.input_mode_key('s'));
+        assert(f.ui.input_mode_key('c') && f.ui.input_mode_key('s'));
         f.ui.set_cursor(0, 1);
         assert(f.ui.paste());
         assert(f.editing().tracks_[0].steps_[1].note_ == 63);
