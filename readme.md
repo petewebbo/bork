@@ -71,6 +71,7 @@ Edits go through the store protocol rather than accessing live audio state.
   remains visible when empty.
 - **q/Q** quits and stops audio. **Escape** cancels the current input mode;
   outside a mode it does nothing and never quits.
+  Ncurses uses a 25 ms Escape-sequence timeout so cancelling a mode stays responsive.
 
 An active cell under the cursor has a dark-grey background. Multi-cell selection
 uses a light-grey background with an underlined cursor (with basic-colour or

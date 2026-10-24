@@ -27,6 +27,7 @@ struct Terminal {
         cbreak();
         noecho();
         keypad(stdscr, TRUE);
+        set_escdelay(25); // Distinguish bare Escape from key sequences without a long pause.
         // Standard xterm modifier encoding, also used by many modern terminals.
         // Keep native ncurses shifted-arrow codes as a fallback below.
         define_key("\033[1;2A", SHIFT_UP);
