@@ -54,6 +54,7 @@ struct track_transport {
         samples_per_cycle_ = samples_per_step_ * steps_per_cycle_;
         steps_per_sample_ = 1 / samples_per_step_;
         block_start_sample_ = block_start_sample_ / old_samples_per_cycle * samples_per_cycle_;        
+        block_end_sample_ = block_end_sample_ / old_samples_per_cycle * samples_per_cycle_;        
         
     }
 
