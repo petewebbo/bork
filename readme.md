@@ -69,10 +69,11 @@ Edits go through the store protocol rather than accessing live audio state.
   for the number; **Escape** cancels. Other keys do not edit or control playback
   while waiting for a number. The bar also shows errors/pending feedback and
   remains visible when empty.
-- **e**, then **n/v/l** chooses the values displayed beneath note names:
-  MIDI note numbers (default), velocity, or raw stored length. Field labels appear
-  beside each value row, including values retained on empty steps. Choosing a
-  field closes the prompt; **Escape** cancels without changing the field.
+- **e**, then **n/v/l** chooses what each grid cell displays: note names such as
+  C4 (default), velocity, or raw stored length. These replace one another in the
+  same cells; there are no additional value rows. Velocity/length views also show
+  values retained on empty steps. Choosing a field closes the prompt;
+  **Escape** cancels without changing the field.
   Other keys and mouse clicks are ignored while choosing. This is display-only:
   it sends no store/audio requests and does not edit note, velocity or length.
 - **q/Q** quits and stops audio. **Escape** cancels the current input mode;

@@ -118,10 +118,6 @@ void draw(const GridWidget& widget, const sequencer_status& status) {
         const int y = TOP + row * ROW_H;
         attrset(A_BOLD);
         mvaddstr(y, 2, names[row]);
-        attrset(A_DIM);
-        const char* field = widget.edit_field_ == GridWidget::edit_field::note ? "Note"
-            : widget.edit_field_ == GridWidget::edit_field::velocity ? "Velocity" : "Length";
-        mvaddstr(y + 1, 2, field);
         const auto current_step = status.current_step(row,
             static_cast<uint8_t>(widget.loaded_pattern_), playing && !widget.loading());
         for (size_t col = 0; col < GridWidget::COLS; ++col) {
@@ -151,13 +147,14 @@ void draw(const GridWidget& widget, const sequencer_status& status) {
             }
             attrset(style);
             const int x = LEFT + col * PITCH;
-            if (active) {
+            if (widget.edit_field_ != GridWidget::edit_field::note) {
+                mvprintw(y, x, "%4d", widget.displayed_value(row, col));
+            } else if (active) {
                 const auto* note = lookup_midi_note(widget.note_number(row, col));
                 mvprintw(y, x, "%-4s", note ? note->name.data() : "????");
             } else {
                 mvaddstr(y, x, " ·· ");
             }
-            mvprintw(y + 1, x, "%4d", widget.displayed_value(row, col));
         }
     }
     attrset(A_NORMAL);
