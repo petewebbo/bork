@@ -1,6 +1,6 @@
 #pragma once
 
-#include "pattern.hpp"
+#include "model/pattern.hpp"
 #include <cstdint>
 
 namespace bork {

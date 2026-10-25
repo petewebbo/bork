@@ -7,8 +7,8 @@
 
 #include <AudioFile.h>
 
-#include <pattern.hpp>
-#include <machine.hpp>
+#include "model/pattern.hpp"
+#include "audio/machine.hpp"
 
 namespace bork {
 

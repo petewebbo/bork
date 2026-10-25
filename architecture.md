@@ -5,6 +5,24 @@ store, and audio playback. The detailed ownership and queue contract lives in
 `doc/specs/2026-10-19-new-architecture.md`. Parameter and machine examples below
 describe future direction, not additional implemented features.
 
+## Source layout
+
+| Directory | Responsibility |
+|---|---|
+| `src/app/` | Application and non-rendering preview entrypoints, wiring and shutdown |
+| `src/model/` | Pattern values, edit operations, constants and MIDI note metadata |
+| `src/store/` | Authoritative bank, worker and playback snapshot preparation |
+| `src/audio/` | Sequencing, transport, machines and PortAudio wrapper |
+| `src/messages/` | Cross-thread messages, queues, borrowed references and status |
+| `src/ui/` | Editing view model, selection, terminal input and rendering |
+| `tests/` | Flat regression suites and their single executable entrypoint |
+
+Headers live beside their related implementation; there is no public `inc/` API.
+Project includes are explicit paths from the `src/` include root, for example
+`"model/pattern.hpp"`. Keep existing header-only code header-only. Top-level
+CMake builds `bork`, `bork_preview` and, with testing enabled, `bork_tests`;
+directories do not introduce separate libraries or nested build projects.
+
 ## Expected scope
 
 - 16 tracks.

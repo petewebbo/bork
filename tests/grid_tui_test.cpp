@@ -1,6 +1,6 @@
-#include <grid_tui.hpp>
-#include <midi_notes.hpp>
-#include <sequencer.hpp>
+#include "ui/grid_tui.hpp"
+#include "model/midi_notes.hpp"
+#include "audio/sequencer.hpp"
 #include <string_view>
 #undef NDEBUG
 #include <cassert>

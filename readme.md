@@ -18,6 +18,11 @@ The UI requires ncurses headers/libraries (macOS Command Line Tools, or
 ctest --test-dir .build --output-on-failure
 ```
 
+The same build also produces `./.build/bork_preview`, a non-rendering terminal
+preview using the real store protocol. Build just that target with
+`cmake --build .build --target bork_preview`; no separate preview CMake project
+or `tui/` build directory is needed.
+
 On Linux/non-Apple Unix, `./build.sh USE_JACK` additionally compiles PortAudio's
 JACK backend. Install `pkg-config` and JACK development files first (for example
 `libjack-jackd2-dev` on Debian/Ubuntu). Direct CMake builds use `-DUSE_JACK=ON`.
@@ -95,7 +100,7 @@ of all step fields, including empty cells; overlap and repeated pastes are safe.
 Copy prompts use the top status bar and block normal controls until completed
 or cancelled. Copy/selection movement never sends audio commands.
 
-Active cells display MIDI note names using `inc/midi_notes.hpp` (128-entry
+Active cells display MIDI note names using `src/model/midi_notes.hpp` (128-entry
 lookup table with note numbers, sharp-spelled names and equal-tempered frequencies;
 A4 = 440 Hz, MIDI 60 = C4). Newly enabled empty cells default to C4.
 The sequencer still uses note zero to mean inactive, so MIDI 0 cannot currently
@@ -160,12 +165,11 @@ Store acceptance is not an audio switch acknowledgement. Shutdown joins callback
 before reclaiming snapshot storage. See
 `doc/specs/2026-10-19-new-architecture.md` for the protocol and ownership contract.
 
-The five sample paths in `src/main.cpp` are absolute; change them to point to
+The five sample paths in `src/app/main.cpp` are absolute; change them to point to
 your files. Samples are not resampled, so use samples matching the output sample
-rate. `tui/` can also build a standalone preview with an empty pattern; the main
-Bork target uses the live pattern. `grid_tui2.cpp` remains an older experiment.
+rate. The preview entrypoint is `src/app/preview.cpp`; it does not open an audio device.
 
-`inc/ezpz_portaudio.hpp` replaces the JACK wrapper and retains the virtual
+`src/audio/ezpz_portaudio.hpp` retains the virtual
 `process` interface with non-interleaved float buffers. Derived classes must stop
 the stream before destroying state used by the callback. Variable callback sizes
 are processed in bounded chunks, without allocating in the audio callback.

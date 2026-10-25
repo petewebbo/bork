@@ -1,7 +1,7 @@
 #pragma once
 
-#include "grid_selection.hpp"
-#include "pattern_store.hpp"
+#include "ui/grid_selection.hpp"
+#include "store/pattern_store.hpp"
 #include <array>
 #include <cstddef>
 #include <cstdio>

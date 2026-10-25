@@ -1,7 +1,7 @@
 #pragma once
 
-#include "pattern.hpp"
-#include "sequencer_command.hpp"
+#include "model/pattern.hpp"
+#include "messages/sequencer_command.hpp"
 #include <rigtorp/SPSCQueue.h>
 #include <cassert>
 #include <cstdint>

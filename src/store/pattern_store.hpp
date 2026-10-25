@@ -1,8 +1,8 @@
 #pragma once
 
-#include "pattern_edit.hpp"
-#include "pattern_exchange.hpp"
-#include "sequencer_status.hpp"
+#include "model/pattern_edit.hpp"
+#include "messages/pattern_exchange.hpp"
+#include "messages/sequencer_status.hpp"
 #include <array>
 #include <atomic>
 #include <cassert>

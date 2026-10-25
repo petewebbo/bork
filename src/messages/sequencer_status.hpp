@@ -1,6 +1,6 @@
 #pragma once
 
-#include "bork_defines.hpp"
+#include "model/bork_defines.hpp"
 #include <array>
 #include <atomic>
 #include <cstddef>

@@ -56,9 +56,9 @@ set(CURSES_NEED_NCURSES TRUE)
 find_package(Curses REQUIRED)
 find_package(Threads REQUIRED)
 
-add_executable(bork src/main.cpp tui/grid_tui.cpp)
-target_include_directories(bork PUBLIC
-    inc
+add_executable(bork src/app/main.cpp src/ui/grid_tui.cpp)
+target_include_directories(bork PRIVATE
+    src
     ${CURSES_INCLUDE_DIRS}
 )
 target_link_libraries(bork PRIVATE
@@ -73,6 +73,11 @@ if(USE_JACK)
     target_compile_definitions(bork PRIVATE BORK_USE_JACK)
 endif()
 
+add_executable(bork_preview src/app/preview.cpp src/ui/grid_tui.cpp)
+target_include_directories(bork_preview PRIVATE src ${CURSES_INCLUDE_DIRS})
+target_link_libraries(bork_preview PRIVATE
+    ${CURSES_LIBRARIES} SPSCQueue::SPSCQueue Threads::Threads)
+
 include(CTest)
 if(BUILD_TESTING)
     add_executable(bork_tests
@@ -84,7 +89,7 @@ if(BUILD_TESTING)
         tests/selection_clipboard_test.cpp
         tests/playhead_test.cpp
     )
-    target_include_directories(bork_tests PRIVATE inc)
+    target_include_directories(bork_tests PRIVATE src)
     target_link_libraries(bork_tests PRIVATE
         portaudio_static SPSCQueue::SPSCQueue AudioFile fmt::fmt Threads::Threads)
     add_test(NAME bork_tests COMMAND bork_tests)

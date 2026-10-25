@@ -1,10 +1,10 @@
 #pragma once
 
-#include "bork_defines.hpp"
-#include "pattern_exchange.hpp"
-#include "sampler.hpp"
-#include "sequencer_status.hpp"
-#include "transport.hpp"
+#include "model/bork_defines.hpp"
+#include "messages/pattern_exchange.hpp"
+#include "audio/sampler.hpp"
+#include "messages/sequencer_status.hpp"
+#include "audio/transport.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>

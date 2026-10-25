@@ -1,4 +1,4 @@
-#include <pattern_store.hpp>
+#include "store/pattern_store.hpp"
 #undef NDEBUG
 #include <cassert>
 #include <limits>

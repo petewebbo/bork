@@ -1,5 +1,5 @@
-#include <grid_tui.hpp>
-#include <sequencer.hpp>
+#include "ui/grid_tui.hpp"
+#include "audio/sequencer.hpp"
 #undef NDEBUG
 #include <cassert>
 

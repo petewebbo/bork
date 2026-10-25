@@ -1,10 +1,10 @@
 #include <algorithm>
 #include <array>
-#include <grid_tui.hpp>
+#include "ui/grid_tui.hpp"
 #include <fmt/base.h>
-#include <ezpz_portaudio.hpp>
-#include <sequencer.hpp>
-#include <pattern_store.hpp>
+#include "audio/ezpz_portaudio.hpp"
+#include "audio/sequencer.hpp"
+#include "store/pattern_store.hpp"
 #include <string_view>
 #ifdef BORK_USE_JACK
 #include <pa_jack.h>

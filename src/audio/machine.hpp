@@ -1,7 +1,7 @@
 #pragma once
 
 #include <span>
-#include <pattern.hpp>
+#include "model/pattern.hpp"
 
 namespace bork{
 

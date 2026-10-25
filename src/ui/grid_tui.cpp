@@ -1,5 +1,5 @@
-#include "grid_tui.hpp"
-#include "midi_notes.hpp"
+#include "ui/grid_tui.hpp"
+#include "model/midi_notes.hpp"
 #include <curses.h>
 // ncurses also defines COLS; keep the grid's existing constant unambiguous.
 #undef COLS

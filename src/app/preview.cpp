@@ -1,5 +1,5 @@
-#include "grid_tui.hpp"
-#include "pattern_store.hpp"
+#include "ui/grid_tui.hpp"
+#include "store/pattern_store.hpp"
 #include <chrono>
 #include <thread>
 

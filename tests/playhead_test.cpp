@@ -1,5 +1,5 @@
-#include <pattern_store.hpp>
-#include <sequencer.hpp>
+#include "store/pattern_store.hpp"
+#include "audio/sequencer.hpp"
 #undef NDEBUG
 #include <cassert>
 #include <limits>
