@@ -23,6 +23,32 @@ Project includes are explicit paths from the `src/` include root, for example
 CMake builds `bork`, `bork_preview` and, with testing enabled, `bork_tests`;
 directories do not introduce separate libraries or nested build projects.
 
+## Terminal UI
+
+The FTXUI adapter has four concrete parts, shared by the main app and preview:
+
+| File | Responsibility |
+|---|---|
+| `editor_state.hpp` | Terminal-independent editing copy, selection, clipboard, store requests/recovery and one input-mode enum |
+| `pattern_grid.cpp` | Custom grid component, cell styling, navigation and reflected cell hitboxes |
+| `editor_component.cpp` | Status/header/help composition, responsive fallback, modal-first routing and normal-mode quit |
+| `run_tui.cpp` | FTXUI terminal lifecycle and main-thread 25 ms store-poll/redraw loop |
+
+FTXUI types stay out of editor state, store and audio. Components reference the
+existing editor state; they do not own another pattern copy. Rendering only reads
+state. Input handlers invoke editor operations, and only the runner polls store
+responses. One `input_mode` prevents copy/pattern/edit prompts from overlapping;
+active modes consume keys/mouse events before normal controls or quit.
+
+Grid cells are DOM elements, not separate button components. Reflected boxes are
+the single source of truth for mouse targeting. Resize fallback suppresses grid
+editing below 90×15. Colors adapt to FTXUI terminal capabilities; playheads change
+foreground without replacing selection/cursor styling.
+
+The runner uses FTXUI's non-blocking `Loop::RunOnce()` and posts a refresh event
+at each poll. It does not introduce a refresh thread, mutate state from FTXUI's
+input threads, or require store/audio to call UI code. Terminal cleanup is RAII.
+
 ## Expected scope
 
 - 16 tracks.

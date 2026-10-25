@@ -6,6 +6,7 @@ void test_pattern_switching();
 void test_edit_batches();
 void test_selection_clipboard();
 void test_playheads();
+void test_ui_components();
 
 int main() {
     const struct {
@@ -18,6 +19,7 @@ int main() {
         {"edit_batches", test_edit_batches},
         {"selection_clipboard", test_selection_clipboard},
         {"playhead_telemetry", test_playheads},
+        {"ui_components", test_ui_components},
     };
     for (const auto& suite : suites) {
         std::printf("Running %s\n", suite.name);
@@ -25,5 +27,5 @@ int main() {
         suite.run();
         std::printf("Passed %s\n", suite.name);
     }
-    std::puts("All 6 test suites passed.");
+    std::puts("All test suites passed.");
 }

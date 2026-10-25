@@ -1,4 +1,5 @@
-#include "ui/grid_tui.hpp"
+#include "ui/editor_state.hpp"
+#include "ui/run_tui.hpp"
 #include "store/pattern_store.hpp"
 #include <chrono>
 #include <thread>
@@ -7,7 +8,7 @@
 int main() {
     bork::pattern_store store;
     bork::snapshot_consumer audio(store.exchange_, store.initial_snapshot());
-    bork::GridWidget widget(store);
+    bork::EditorState editor(store);
     store.start();
     std::atomic<bool> stop{false};
     std::thread consumer([&] {
@@ -30,7 +31,7 @@ int main() {
             }
     });
     try {
-        bork::run_grid_tui(widget, store.ui_status_);
+        bork::run_tui(editor, store.ui_status_);
     } catch (...) {
         store.stop_admission();
         stop.store(true, std::memory_order_relaxed);

@@ -1,4 +1,4 @@
-#include "ui/grid_tui.hpp"
+#include "ui/editor_state.hpp"
 #include "model/midi_notes.hpp"
 #include "audio/sequencer.hpp"
 #include <string_view>
@@ -11,14 +11,14 @@ namespace {
 struct fixture {
     bork::pattern_store store;
     bork::sequencer audio;
-    bork::GridWidget ui;
+    bork::EditorState ui;
     explicit fixture(const bork::pattern_storage& initial = {})
         : store(initial), audio(store.exchange_, store.initial_snapshot()), ui(store) { flush(); }
     void flush() {
         for (int pass = 0; pass < 6; ++pass) {
             store.pump();
             audio.process_commands();
-            audio.publish_status(store.audio_status_, bork::GridWidget::ROWS);
+            audio.publish_status(store.audio_status_, bork::EditorState::ROWS);
             store.pump();
             ui.poll_notifications();
         }
@@ -33,23 +33,55 @@ void test_grid_tui() {
         values[0].tracks_[0].steps_[1] = {.note_ = 0, .vel_ = 42, .len_ = 6};
         fixture display(values);
         assert(display.ui.input_mode_key('e'));
-        assert(display.ui.input_mode_key('v') && !display.ui.awaiting_edit_);
+        assert(display.ui.input_mode_key('v') && display.ui.mode_ == bork::input_mode::normal);
         assert(display.ui.displayed_value(0, 0) == 81);
         assert(display.ui.displayed_value(0, 1) == 42);
         assert(display.ui.input_mode_key('e') && display.ui.input_mode_key('l'));
         assert(display.ui.displayed_value(0, 0) == 12);
         assert(display.ui.input_mode_key('e'));
         assert(display.ui.input_mode_key('x') && display.ui.input_mode_key('q'));
-        assert(display.ui.input_mode_key(' ') && display.ui.awaiting_edit_);
-        assert(display.ui.input_mode_key(27) && !display.ui.awaiting_edit_);
+        assert(display.ui.input_mode_key(' ') && display.ui.mode_ == bork::input_mode::edit_select);
+        assert(display.ui.input_mode_key(27) && display.ui.mode_ == bork::input_mode::normal);
         assert(display.ui.displayed_value(0, 0) == 12);
         assert(display.ui.input_mode_key('e') && display.ui.input_mode_key('n'));
         assert(display.ui.displayed_value(0, 0) == 67 && display.ui.displayed_value(0, 1) == 0);
         assert(display.ui.note_number(0, 0) == 67);
         assert(display.store.outstanding_requests() == 0);
         assert(display.ui.input_mode_key('c') && display.ui.input_mode_key('e'));
-        assert(display.ui.awaiting_copy_ && !display.ui.awaiting_edit_);
+        assert(display.ui.mode_ == bork::input_mode::copy);
         assert(display.ui.input_mode_key(27));
+    }
+    {
+        fixture modal;
+        for (const auto prompt : {'c', 'P', 'e'}) {
+            assert(modal.ui.input_mode_key(prompt));
+            const auto mode = modal.ui.mode_;
+            assert(mode != bork::input_mode::normal);
+            for (const auto key : {'x', ' ', 'q', 'Q', 'c', 'P', '0', '9'}) {
+                assert(modal.ui.input_mode_key(key));
+                assert(modal.ui.mode_ == mode);
+            }
+            assert(modal.ui.input_mode_key(27));
+            assert(modal.ui.mode_ == bork::input_mode::normal);
+            assert(!modal.ui.input_mode_key(27));
+            assert(!modal.ui.input_mode_key('q'));
+            assert(modal.ui.selected_pattern_ == 0);
+            assert(modal.ui.current_row_ == 0 && modal.ui.current_col_ == 0);
+            assert(modal.ui.edit_field_ == bork::EditorState::edit_field::note);
+            assert(modal.store.outstanding_requests() == 0);
+            assert(!modal.audio.is_playing_);
+            assert(modal.ui.note_number(0, 0) == 0);
+            assert(modal.store.original(0).tracks_[0].steps_[0].note_ == 0);
+        }
+        assert(modal.ui.input_mode_key('P'));
+        assert(modal.ui.pattern_input('e'));
+        assert(modal.ui.mode_ == bork::input_mode::pattern_select);
+        assert(modal.ui.input_mode_key(27));
+        assert(modal.ui.input_mode_key('e'));
+        assert(modal.ui.pattern_input('P'));
+        assert(modal.ui.mode_ == bork::input_mode::edit_select);
+        assert(modal.ui.input_mode_key(27));
+        assert(modal.store.outstanding_requests() == 0);
     }
     bork::sequencer_status status;
     const auto& published = status;

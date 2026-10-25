@@ -5,12 +5,11 @@ A very incomplete tui drum machine.
 ## Build and run
 
 Requires CMake, a C/C++20 toolchain, Git and internet access on the first build.
-CMake fetches PortAudio 19.7.0, fmt, AudioFile and rigtorp/SPSCQueue v1.1
+CMake fetches PortAudio 19.7.0, fmt, AudioFile, FTXUI 7.0.3 and rigtorp/SPSCQueue v1.1
 (pinned to commit `565a5149d54930463d58cb0f69b978d439555e66`). On Linux, install the development
 packages for your native PortAudio backend (for example `libasound2-dev` for ALSA).
 macOS uses CoreAudio; no JACK server or JACK development package is required.
-The UI requires ncurses headers/libraries (macOS Command Line Tools, or
-`libncurses-dev` on Debian/Ubuntu).
+The terminal UI uses FTXUI; ncurses headers/libraries are no longer required.
 
 ```sh
 ./build.sh
@@ -44,7 +43,7 @@ A build without JACK rejects `--jack` with rebuild instructions. An unavailable
 JACK backend/server or missing output ports is an error, never a silent fallback.
 `./.build/bork --help` prints usage; unknown arguments are rejected.
 
-All six test suites run in one executable, `./.build/bork_tests`, also registered
+All seven test suites run in one executable, `./.build/bork_tests`, also registered
 as a single CTest test. It prints each suite name before running its assertions.
 
 The audio engine opens PortAudio's default output device at its default sample
@@ -53,7 +52,7 @@ stream. The mono sequencer mix is sent to every output channel.
 
 ## Pattern UI
 
-The main application displays a five-track, sixteen-step ncurses grid: Kick,
+The main application displays a five-track, sixteen-step FTXUI grid: Kick,
 Snare, Clap, HH and Open HH. It needs a 90 × 15 terminal. The grid loads one
 editing copy from the dedicated store; all eight stored patterns start empty.
 Edits go through the store protocol rather than accessing live audio state.
@@ -83,17 +82,20 @@ Edits go through the store protocol rather than accessing live audio state.
   it sends no store/audio requests and does not edit note, velocity or length.
 - **q/Q** quits and stops audio. **Escape** cancels the current input mode;
   outside a mode it does nothing and never quits.
-  Ncurses uses a 25 ms Escape-sequence timeout so cancelling a mode stays responsive.
+  Escape decoding is handled by FTXUI; the UI services store replies and redraws
+  every 25 ms without a separate application refresh thread.
 
 An active cell under the cursor has a dark-grey background. Multi-cell selection
 uses a light-grey background with an underlined cursor (with basic-colour or
 monochrome fallbacks). Selection is anchor-to-cursor, inclusive, and persists
 until normal movement, clicking or a pattern change.
 
-Shift-arrows support standard xterm `CSI 1;2 A/B/C/D` sequences and native ncurses
-shifted-arrow codes. Ctrl+Shift-arrows use xterm `CSI 1;6 A/B/C/D` sequences. A terminal must actually send shifted keys distinctly;
-terminals configured to intercept these shortcuts may need configuration.
-The standalone preview was exercised under a pseudo-terminal using xterm input.
+Shift-arrows use standard xterm `CSI 1;2 A/B/C/D` sequences. Ctrl+Shift-arrows use
+xterm `CSI 1;6 A/B/C/D`; plain arrows and Home/End use FTXUI events. A terminal must
+send modified keys distinctly; terminal shortcuts may need configuration.
+Mouse targeting uses rendered cell bounds and follows layout changes on resize.
+The preview was exercised under a pseudo-terminal, including mouse press/release,
+resize, fast Escape cancellation and monochrome (`NO_COLOR=1`) rendering.
 
 The clipboard is internal to Bork and survives pattern changes. It owns snapshots
 of all step fields, including empty cells; overlap and repeated pastes are safe.
