@@ -37,8 +37,12 @@ The FTXUI adapter has four concrete parts, shared by the main app and preview:
 FTXUI types stay out of editor state, store and audio. Components reference the
 existing editor state; they do not own another pattern copy. Rendering only reads
 state. Input handlers invoke editor operations, and only the runner polls store
-responses. One `input_mode` prevents copy/pattern/edit prompts from overlapping;
+responses. One `input_mode` prevents copy/pattern/edit/tempo prompts from overlapping;
 active modes consume keys/mouse events before normal controls or quit.
+Tempo entry uses FTXUI's standard `Input` component bound to editor-owned text.
+Editor state parses the entire value and validates 1–1000 BPM before submitting
+the existing tempo request. Store and audio independently validate the same range.
+This changes no transport phase/rescheduling policy.
 
 Grid cells are DOM elements, not separate button components. Reflected boxes are
 the single source of truth for mouse targeting. Resize fallback suppresses grid

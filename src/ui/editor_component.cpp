@@ -2,6 +2,7 @@
 #include "ui/editor_state.hpp"
 #include "ui/pattern_grid.hpp"
 #include <ftxui/component/event.hpp>
+#include <ftxui/component/component.hpp>
 #include <ftxui/dom/elements.hpp>
 #include <ftxui/screen/terminal.hpp>
 #include <cstdio>
@@ -18,6 +19,7 @@ const char* status_text(const EditorState& state) {
         ? "Copy: p = pattern | s = selection | Esc = cancel"
         : "Copy: p = pattern | s = step | Esc = cancel";
     case input_mode::edit_select: return "Edit field: n = note | v = velocity | l = length | Esc = cancel";
+    case input_mode::tempo: return "tempo: ";
     case input_mode::normal: break;
     }
     if (state.message_) return state.message_;
@@ -44,9 +46,21 @@ class editor_component final : public ComponentBase {
 public:
     editor_component(EditorState& state, const sequencer_status& status, std::function<void()> on_quit)
         : state_(state), status_(status), on_quit_(std::move(on_quit)),
-          grid_(make_pattern_grid(state, status)) { Add(grid_); }
+          grid_(make_pattern_grid(state, status)) {
+        InputOption options;
+        options.multiline = false;
+        tempo_input_ = Input(&state_.tempo_input_, options);
+        Add(grid_);
+        Add(tempo_input_);
+    }
+    Component ActiveChild() override {
+        return state_.mode_ == input_mode::tempo ? tempo_input_ : grid_;
+    }
     Element OnRender() override {
         auto status = hbox({text(" "), text(status_text(state_)), filler()});
+        if (state_.mode_ == input_mode::tempo)
+            status = hbox({text(" "), text(status_text(state_)), tempo_input_->Render() | flex,
+                text(state_.message_ ? state_.message_ : ""), text(" | Enter: set | Esc: cancel")});
         if (Terminal::ColorSupport() == Terminal::Palette1) status |= inverted;
         else status = status | bgcolor(Color::GrayDark) | color(Color::White);
         char heading[128];
@@ -57,12 +71,18 @@ public:
                       state_.switch_pending_ ? " | Switch pending" : "");
         auto full = vbox({status,
             hbox({text("  "), text(heading) | bold}),
-            hbox({text("  "), text("Shift+arrows: select | x: toggle | c: copy | v: paste | P: pattern | e: edit field")}),
+            hbox({text("  "), text("Shift+arrows: select | x: toggle | c: copy | v: paste | P: pattern | e: field | t: tempo")}),
             grid_->Render(), filler()});
         auto small = vbox({status, text("Resize terminal (90 x 15) | q quits"), filler()});
         return std::make_shared<responsive_layout>(std::move(full), std::move(small), fits_);
     }
     bool OnEvent(Event event) override {
+        if (state_.mode_ == input_mode::tempo) {
+            if (event == Event::Escape) state_.input_mode_key(27);
+            else if (event == Event::Return) state_.submit_tempo();
+            else tempo_input_->OnEvent(std::move(event));
+            return true;
+        }
         // Modes get first refusal, before mouse, navigation, transport, or quit.
         if (state_.mode_ != input_mode::normal) {
             if (event == Event::Escape) state_.input_mode_key(27);
@@ -86,6 +106,7 @@ private:
     const sequencer_status& status_;
     std::function<void()> on_quit_;
     Component grid_;
+    Component tempo_input_;
     bool fits_{};
 };
 } // namespace

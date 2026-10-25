@@ -7,6 +7,8 @@
 #include <ftxui/screen/screen.hpp>
 #include <ftxui/screen/terminal.hpp>
 #include <array>
+#include <cmath>
+#include <limits>
 #include <string>
 #include <utility>
 #undef NDEBUG
@@ -74,6 +76,74 @@ Event mouse(int x, int y, Mouse::Motion motion = Mouse::Pressed) {
 void test_ui_components() {
     const auto original_support = Terminal::ColorSupport();
     Terminal::SetColorSupport(Terminal::TrueColor);
+    {
+        fixture tempo;
+        tempo.audio.transport_.sample_rate_ = 48000;
+        for (const auto& [text, bpm] : std::array<std::pair<const char*, float>, 5>{{
+                 {"1", 1}, {"1000", 1000}, {"142.5", 142.5f}, {"1.25", 1.25f}, {"999.75", 999.75f}}}) {
+            tempo.key('t');
+            tempo.editor->OnEvent(Event::Character(text));
+            assert(tempo.editor->OnEvent(Event::Return));
+            assert(tempo.state.mode_ == bork::input_mode::normal);
+            tempo.flush();
+            const float expected = 48000.0f * 60.0f / (bpm * bork::TICKS_PER_QN);
+            for (const auto& track : tempo.audio.transport_.track_transport_)
+                assert(std::abs(track.samples_per_tick_ - expected) <= expected * 0.00001f);
+        }
+        const auto before = tempo.audio.transport_.track_transport_[0].samples_per_tick_;
+        for (const auto* invalid : {"", "0", "-2", "1000.01", "1000.00001", "0.99999999",
+                                    "nan", "inf", "1e9999", "abc", "120junk", ".", "12.5.3"}) {
+            tempo.key('t');
+            tempo.editor->OnEvent(Event::Character(invalid));
+            assert(tempo.editor->OnEvent(Event::Return));
+            assert(tempo.state.mode_ == bork::input_mode::tempo && tempo.state.message_);
+            assert(tempo.store.outstanding_requests() == 0);
+            tempo.flush();
+            assert(tempo.audio.transport_.track_transport_[0].samples_per_tick_ == before);
+            assert(tempo.editor->OnEvent(Event::Escape));
+        }
+        tempo.key('t');
+        tempo.editor->OnEvent(Event::Character("240q"));
+        tempo.render();
+        tempo.editor->OnEvent(mouse(10, 5));
+        assert(!tempo.quit && tempo.state.note_number(0, 0) == 0);
+        assert(tempo.editor->OnEvent(Event::Escape));
+        tempo.flush();
+        assert(tempo.audio.transport_.track_transport_[0].samples_per_tick_ == before);
+        tempo.key('t');
+        tempo.editor->OnEvent(Event::Character("142x"));
+        assert(tempo.editor->OnEvent(Event::Backspace));
+        assert(tempo.editor->OnEvent(Event::Return));
+        tempo.flush();
+        assert(std::abs(tempo.audio.transport_.track_transport_[0].samples_per_tick_ -
+                        48000.0f * 60 / (142 * bork::TICKS_PER_QN)) < 0.001f);
+
+        // Failed admission retains the entered value for retry, without applying tempo.
+        for (size_t i = 0; i < bork::UI_REQUEST_CAPACITY; ++i)
+            assert(tempo.store.try_submit({.type = bork::store_request::kind::resync, .session = 999}));
+        tempo.key('t');
+        tempo.editor->OnEvent(Event::Character("123.5"));
+        tempo.editor->OnEvent(Event::Return);
+        assert(tempo.state.mode_ == bork::input_mode::tempo && tempo.state.tempo_input_ == "123.5");
+        tempo.flush();
+        assert(tempo.editor->OnEvent(Event::Return));
+        tempo.flush();
+        assert(tempo.state.mode_ == bork::input_mode::normal);
+        const auto applied = tempo.audio.transport_.track_transport_[0].samples_per_tick_;
+        assert(std::abs(applied - 48000.0f * 60 / (123.5f * bork::TICKS_PER_QN)) < 0.001f);
+
+        // Both non-UI trust boundaries reject invalid tempo independently.
+        for (float invalid : {0.0f, 1001.0f, std::numeric_limits<float>::infinity(),
+                              std::numeric_limits<float>::quiet_NaN()}) {
+            assert(tempo.store.try_submit({.type = bork::store_request::kind::tempo, .tempo = invalid}));
+            tempo.store.pump();
+            bork::store_result result;
+            assert(tempo.store.try_result(result) && !result.accepted);
+            assert(tempo.store.exchange_.events.empty());
+            tempo.audio.apply_command({bork::sequencer_command::type::set_tempo, invalid});
+            assert(tempo.audio.transport_.track_transport_[0].samples_per_tick_ == applied);
+        }
+    }
     bork::pattern_storage initial{};
     initial[0].tracks_[0].steps_[0] = {.note_ = 67, .vel_ = 81, .len_ = 12};
     initial[0].tracks_[0].steps_[1] = {.note_ = 0, .vel_ = 42, .len_ = 6};

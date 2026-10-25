@@ -80,6 +80,11 @@ Edits go through the store protocol rather than accessing live audio state.
   **Escape** cancels without changing the field.
   Other keys and mouse clicks are ignored while choosing. This is display-only:
   it sends no store/audio requests and does not edit note, velocity or length.
+- **t** opens `tempo: ` in the status bar. Type an integer or decimal BPM and press
+  **Enter** to apply it through the store/audio event queue. The inclusive range
+  is **1–1000 BPM**; empty, non-numeric, non-finite and out-of-range input stays
+  in the prompt with an error. Backspace/Delete and arrow keys edit the text.
+  **Escape** cancels without changing tempo; queue-full retains the entry for retry.
 - **q/Q** quits and stops audio. **Escape** cancels the current input mode;
   outside a mode it does nothing and never quits.
   Escape decoding is handled by FTXUI; the UI services store replies and redraws
@@ -129,7 +134,7 @@ includes hidden tracks and track metadata.
 The store owns five shared playback snapshot buffers. Audio borrows only current
 and optional pending references. A capacity-three snapshot queue carries immutable
 references with selection flags; a separate capacity-64 event queue carries explicit
-start/stop and tempo (tempo is not yet exposed in the UI). A capacity-five release
+start/stop and tempo. A capacity-five release
 queue returns buffers to the store. All pattern copying occurs on the store thread.
 Published buffers cannot be overwritten until explicitly returned.
 

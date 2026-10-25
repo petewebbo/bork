@@ -5,10 +5,12 @@
 #include <array>
 #include <cstddef>
 #include <cstdio>
+#include <cstdlib>
+#include <string>
 
 namespace bork {
 
-enum class input_mode { normal, copy, pattern_select, edit_select };
+enum class input_mode { normal, copy, pattern_select, edit_select, tempo };
 
 // UI-thread only: one editing copy, its metadata, and a deliberate clipboard.
 class EditorState {
@@ -42,6 +44,10 @@ public:
         return togglecell();
     }
     bool input_mode_key(int key) {
+        if (mode_ == input_mode::tempo) {
+            if (key == 27) { mode_ = input_mode::normal; message_ = nullptr; }
+            return true;
+        }
         if (mode_ == input_mode::edit_select) {
             if (key == 27) mode_ = input_mode::normal;
             else if (key == 'n' || key == 'v' || key == 'l') {
@@ -67,6 +73,12 @@ public:
         if (key == 'e') {
             mode_ = input_mode::edit_select;
             message_ = nullptr;
+            return true;
+        }
+        if (key == 't') {
+            tempo_input_.clear();
+            message_ = nullptr;
+            mode_ = input_mode::tempo;
             return true;
         }
         return pattern_input(key);
@@ -154,6 +166,24 @@ public:
         desired_playing_ = !desired_playing_;
         return true;
     }
+    bool submit_tempo() {
+        char* end = nullptr;
+        const double tempo = std::strtod(tempo_input_.c_str(), &end);
+        if (end == tempo_input_.c_str() || end != tempo_input_.c_str() + tempo_input_.size() ||
+            !valid_tempo(tempo)) {
+            message_ = "Tempo must be a number from 1 to 1000 BPM";
+            return false;
+        }
+        store_request request{};
+        request.type = store_request::kind::tempo;
+        request.session = session_;
+        request.tempo = static_cast<float>(tempo);
+        if (!enqueue(request)) return false;
+        mode_ = input_mode::normal;
+        std::snprintf(feedback_.data(), feedback_.size(), "Tempo: %g BPM", tempo);
+        message_ = feedback_.data();
+        return true;
+    }
     bool togglecell() {
         if (!editable()) return false;
         return toggle_area({current_row_, current_row_, current_col_, current_col_});
@@ -231,6 +261,7 @@ public:
     bool switch_pending_{};
     input_mode mode_{input_mode::normal};
     edit_field edit_field_{edit_field::note};
+    std::string tempo_input_;
     bool queue_full_{};
     const char* message_{};
 private:

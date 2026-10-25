@@ -35,7 +35,6 @@ struct fixture {
         auto& transport = audio.transport_.track_transport_[0];
         transport.next_step_ = 0;
         transport.block_start_sample_ = 0;
-        transport.cycle_start_sample_ = 0;
         std::array<float, 1> buffer{};
         audio.process_track(0, buffer);
         audio.publish_status(store.audio_status_, 1);

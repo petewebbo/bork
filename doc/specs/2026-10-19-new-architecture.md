@@ -63,7 +63,7 @@ Capture each queue's depth once per drain, keeping work bounded. Process all
 captured messages, not just one message per chunk.
 
 Start/stop are explicit desired states rather than toggle events. UI can still
-present a toggle control. Validate tempo using the existing finite/range checks.
+present a toggle control. Validate tempo as finite and within 1–1000 BPM inclusive.
 Stop pauses sequencing; it does not discard pending selection or cut sample tails.
 
 ## Snapshot pool and release

@@ -13,8 +13,8 @@ struct sequencer_command {
     type type_{};
     float tempo_{};
 };
-inline bool valid_tempo(float tempo) noexcept {
-    return std::isfinite(tempo) && tempo >= 20 && tempo <= 300;
+inline bool valid_tempo(double tempo) noexcept {
+    return std::isfinite(tempo) && tempo >= 1 && tempo <= 1000;
 }
 static_assert(std::is_trivially_copyable_v<sequencer_command>);
 static_assert(std::atomic<size_t>::is_always_lock_free);
