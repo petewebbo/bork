@@ -26,7 +26,7 @@ struct track_transport {
     uint16_t steps_per_cycle_{};
     uint16_t ticks_per_step_{};
 
-    uint32_t cycle_start_sample_;
+    // uint32_t cycle_start_sample_;
     uint32_t block_start_sample_{};
     uint32_t block_end_sample_{};
     uint16_t last_step_played_{NO_CURRENT_STEP};
@@ -48,9 +48,13 @@ struct track_transport {
     }
 
     void update_internal_values() {
+        auto old_samples_per_step = samples_per_step_;
+        auto old_samples_per_cycle = samples_per_cycle_;
         samples_per_step_ = samples_per_tick_ * ticks_per_step_;
         samples_per_cycle_ = samples_per_step_ * steps_per_cycle_;
         steps_per_sample_ = 1 / samples_per_step_;
+        block_start_sample_ = block_start_sample_ / old_samples_per_cycle * samples_per_cycle_;        
+        
     }
 
     void set_tempo(float sample_rate, float beats_per_minute) {
