@@ -85,6 +85,7 @@ void draw_status_bar(const GridWidget& widget) {
         : widget.awaiting_copy_ ? (widget.selection().multiple()
             ? "Copy: p = pattern | s = selection | Esc = cancel"
             : "Copy: p = pattern | s = step | Esc = cancel")
+        : widget.awaiting_edit_ ? "Edit field: n = note | v = velocity | l = length | Esc = cancel"
         : widget.message_ ? widget.message_
         : widget.loading() ? "Loading editing copy - edits and copy disabled"
         : widget.switch_pending_ ? "Pattern switch pending" : "";
@@ -109,7 +110,7 @@ void draw(const GridWidget& widget, const sequencer_status& status) {
              static_cast<int>(widget.playing_pattern_ + 1),
              widget.switch_pending_ ? " | Switch pending" : "");
     attrset(A_NORMAL);
-    mvaddstr(2, 2, "Shift+arrows: select | x: toggle | c: copy | v: paste | P: pattern");
+    mvaddstr(2, 2, "Shift+arrows: select | x: toggle | c: copy | v: paste | P: pattern | e: edit field");
     for (size_t col = 0; col < GridWidget::COLS; ++col)
         mvprintw(TOP - 2, LEFT + col * PITCH + 1, "%02d", static_cast<int>(col + 1));
     const auto area = widget.selection();
@@ -117,6 +118,10 @@ void draw(const GridWidget& widget, const sequencer_status& status) {
         const int y = TOP + row * ROW_H;
         attrset(A_BOLD);
         mvaddstr(y, 2, names[row]);
+        attrset(A_DIM);
+        const char* field = widget.edit_field_ == GridWidget::edit_field::note ? "Note"
+            : widget.edit_field_ == GridWidget::edit_field::velocity ? "Velocity" : "Length";
+        mvaddstr(y + 1, 2, field);
         const auto current_step = status.current_step(row,
             static_cast<uint8_t>(widget.loaded_pattern_), playing && !widget.loading());
         for (size_t col = 0; col < GridWidget::COLS; ++col) {
@@ -152,6 +157,7 @@ void draw(const GridWidget& widget, const sequencer_status& status) {
             } else {
                 mvaddstr(y, x, " ·· ");
             }
+            mvprintw(y + 1, x, "%4d", widget.displayed_value(row, col));
         }
     }
     attrset(A_NORMAL);
@@ -168,7 +174,7 @@ void run_grid_tui(GridWidget& widget, const sequencer_status& status) {
         const int key = getch();
         widget.poll_notifications(); // Ack may have arrived while waiting for input.
         if (key == ERR) continue;
-        if ((widget.awaiting_pattern_ || widget.awaiting_copy_) && key == KEY_MOUSE) {
+        if ((widget.awaiting_pattern_ || widget.awaiting_copy_ || widget.awaiting_edit_) && key == KEY_MOUSE) {
             MEVENT ignored{};
             getmouse(&ignored);
             continue;

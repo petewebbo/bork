@@ -69,6 +69,12 @@ Edits go through the store protocol rather than accessing live audio state.
   for the number; **Escape** cancels. Other keys do not edit or control playback
   while waiting for a number. The bar also shows errors/pending feedback and
   remains visible when empty.
+- **e**, then **n/v/l** chooses the values displayed beneath note names:
+  MIDI note numbers (default), velocity, or raw stored length. Field labels appear
+  beside each value row, including values retained on empty steps. Choosing a
+  field closes the prompt; **Escape** cancels without changing the field.
+  Other keys and mouse clicks are ignored while choosing. This is display-only:
+  it sends no store/audio requests and does not edit note, velocity or length.
 - **q/Q** quits and stops audio. **Escape** cancels the current input mode;
   outside a mode it does nothing and never quits.
   Ncurses uses a 25 ms Escape-sequence timeout so cancelling a mode stays responsive.

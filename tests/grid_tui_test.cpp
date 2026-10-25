@@ -27,6 +27,30 @@ struct fixture {
 }
 
 void test_grid_tui() {
+    {
+        bork::pattern_storage values{};
+        values[0].tracks_[0].steps_[0] = {.note_ = 67, .vel_ = 81, .len_ = 12};
+        values[0].tracks_[0].steps_[1] = {.note_ = 0, .vel_ = 42, .len_ = 6};
+        fixture display(values);
+        assert(display.ui.input_mode_key('e'));
+        assert(display.ui.input_mode_key('v') && !display.ui.awaiting_edit_);
+        assert(display.ui.displayed_value(0, 0) == 81);
+        assert(display.ui.displayed_value(0, 1) == 42);
+        assert(display.ui.input_mode_key('e') && display.ui.input_mode_key('l'));
+        assert(display.ui.displayed_value(0, 0) == 12);
+        assert(display.ui.input_mode_key('e'));
+        assert(display.ui.input_mode_key('x') && display.ui.input_mode_key('q'));
+        assert(display.ui.input_mode_key(' ') && display.ui.awaiting_edit_);
+        assert(display.ui.input_mode_key(27) && !display.ui.awaiting_edit_);
+        assert(display.ui.displayed_value(0, 0) == 12);
+        assert(display.ui.input_mode_key('e') && display.ui.input_mode_key('n'));
+        assert(display.ui.displayed_value(0, 0) == 67 && display.ui.displayed_value(0, 1) == 0);
+        assert(display.ui.note_number(0, 0) == 67);
+        assert(display.store.outstanding_requests() == 0);
+        assert(display.ui.input_mode_key('c') && display.ui.input_mode_key('e'));
+        assert(display.ui.awaiting_copy_ && !display.ui.awaiting_edit_);
+        assert(display.ui.input_mode_key(27));
+    }
     bork::sequencer_status status;
     const auto& published = status;
     assert(!published.playing.load(std::memory_order_relaxed));

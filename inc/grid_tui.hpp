@@ -14,6 +14,7 @@ public:
     static constexpr uint32_t kDefaultNoteNumber = DEFAULT_NOTE_NUMBER;
     static constexpr size_t ROWS = 5;
     static constexpr size_t COLS = MAX_PATTERN_STEPS;
+    enum class edit_field { note, velocity, length };
 
     explicit GridWidget(pattern_store& store) : store_(store) {
         desired_playing_ = store_.ui_status_.playing.load(std::memory_order_relaxed);
@@ -39,6 +40,15 @@ public:
         return togglecell();
     }
     bool input_mode_key(int key) {
+        if (awaiting_edit_) {
+            if (key == 27) awaiting_edit_ = false;
+            else if (key == 'n' || key == 'v' || key == 'l') {
+                edit_field_ = key == 'n' ? edit_field::note
+                    : key == 'v' ? edit_field::velocity : edit_field::length;
+                awaiting_edit_ = false;
+            }
+            return true;
+        }
         if (awaiting_pattern_) return pattern_input(key);
         if (awaiting_copy_) {
             if (key == 27) { awaiting_copy_ = false; message_ = nullptr; }
@@ -50,6 +60,11 @@ public:
         }
         if (key == 'c') {
             if (editable()) awaiting_copy_ = true;
+            return true;
+        }
+        if (key == 'e') {
+            awaiting_edit_ = true;
+            message_ = nullptr;
             return true;
         }
         return pattern_input(key);
@@ -195,6 +210,15 @@ public:
         return true;
     }
     int note_number(size_t row, size_t col) const { return editing_.tracks_[row].steps_[col].note_; }
+    int displayed_value(size_t row, size_t col) const {
+        const auto& step = editing_.tracks_[row].steps_[col];
+        switch (edit_field_) {
+        case edit_field::note: return step.note_;
+        case edit_field::velocity: return step.vel_;
+        case edit_field::length: return step.len_;
+        }
+        return 0;
+    }
     std::array<std::array<bool, COLS>, ROWS> grid_state_{};
     size_t current_row_{};
     size_t current_col_{};
@@ -204,6 +228,8 @@ public:
     bool switch_pending_{};
     bool awaiting_pattern_{};
     bool awaiting_copy_{};
+    bool awaiting_edit_{};
+    edit_field edit_field_{edit_field::note};
     bool queue_full_{};
     const char* message_{};
 private:
