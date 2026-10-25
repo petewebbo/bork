@@ -1,4 +1,4 @@
-#include "ui/grid_tui.hpp"
+#include "ui/editor_state.hpp"
 #include "audio/sequencer.hpp"
 #undef NDEBUG
 #include <cassert>
@@ -7,14 +7,14 @@ namespace {
 struct fixture {
     bork::pattern_store store;
     bork::sequencer audio;
-    bork::GridWidget ui;
+    bork::EditorState ui;
     explicit fixture(const bork::pattern_storage& initial = {})
         : store(initial), audio(store.exchange_, store.initial_snapshot()), ui(store) { flush(); }
     void flush() {
         for (int pass = 0; pass < 6; ++pass) {
             store.pump();
             audio.process_commands();
-            audio.publish_status(store.audio_status_, bork::GridWidget::ROWS);
+            audio.publish_status(store.audio_status_, bork::EditorState::ROWS);
             store.pump();
             ui.poll_notifications();
         }
@@ -39,7 +39,7 @@ void test_selection_clipboard() {
         assert(f.editing().tracks_[0].steps_[3].len_ == 9);
         assert(f.editing().tracks_[0].steps_[4].note_ == 0);
         assert(f.ui.input_mode_key('P') && f.ui.input_mode_key(27));
-        assert(!f.ui.awaiting_pattern_ && f.ui.selected_pattern_ == 0);
+        assert(f.ui.mode_ == bork::input_mode::normal && f.ui.selected_pattern_ == 0);
     }
     {
         fixture f;
@@ -125,11 +125,10 @@ void test_selection_clipboard() {
         initial[0].tracks_[7].steps_[15] = {.note_ = 74, .vel_ = 99, .len_ = 13};
         initial[0].tracks_[7].size_ = 12;
         fixture f(initial);
-        assert(f.ui.input_mode_key('c') && f.ui.awaiting_copy_);
+        assert(f.ui.input_mode_key('c') && f.ui.mode_ == bork::input_mode::copy);
         assert(f.ui.input_mode_key('x') && f.ui.input_mode_key('q'));
         assert(f.store.outstanding_requests() == 0);
-        assert(f.ui.input_mode_key('p') && !f.ui.awaiting_copy_);
-        assert(!f.ui.awaiting_pattern_);
+        assert(f.ui.input_mode_key('p') && f.ui.mode_ == bork::input_mode::normal);
         f.ui.set_cursor(0, 0);
         assert(f.ui.togglecell()); // Clipboard is an independent snapshot.
         assert(f.ui.select_pattern(1));
@@ -149,7 +148,7 @@ void test_selection_clipboard() {
         assert(f.ui.note_number(0, 0) == 67);
         f.flush();
         assert(f.ui.input_mode_key('c') && f.ui.input_mode_key(27));
-        assert(!f.ui.awaiting_copy_ && f.ui.paste());
+        assert(f.ui.mode_ == bork::input_mode::normal && f.ui.paste());
         f.flush();
         // All eight remembered-note rows are replaced, including hidden tracks.
         assert(f.store.notes(1)[7][15] == 74);

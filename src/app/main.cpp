@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <array>
-#include "ui/grid_tui.hpp"
+#include "ui/editor_state.hpp"
+#include "ui/run_tui.hpp"
 #include <fmt/base.h>
 #include "audio/ezpz_portaudio.hpp"
 #include "audio/sequencer.hpp"
@@ -11,7 +12,7 @@
 #endif
 
 namespace {
-constexpr size_t TRACKS_TO_PROCESS = bork::GridWidget::ROWS;
+constexpr size_t TRACKS_TO_PROCESS = bork::EditorState::ROWS;
 
 class audio_client : public ezpz_portaudio<float> {
 public:
@@ -86,14 +87,14 @@ int main(int argc, char** argv) try {
     static_cast<bork::sampler*>(sequencer.machines_[3].get())->audio_file_.load("/Users/petewebbo/code/bork/samples/tapetonic/Tonic_HH_B_T1A_V1.wav");
     static_cast<bork::sampler*>(sequencer.machines_[4].get())->audio_file_.load("/Users/petewebbo/code/bork/samples/tapetonic/Tonic_HHo_B_T1A.wav");
 
-    bork::GridWidget widget(store);
+    bork::EditorState editor(store);
     audio_client audio(sequencer, store.audio_status_);
     audio.init(0, 2, use_jack);
     sequencer.transport_.sample_rate_ = static_cast<uint32_t>(audio.sample_rate());
     sequencer.transport_.set_tempo(120.0f);
     store.start();
     audio.activate();
-    bork::run_grid_tui(widget, store.ui_status_);
+    bork::run_tui(editor, store.ui_status_);
     store.stop_admission();
     audio.deactivate();
     sequencer.release_all();

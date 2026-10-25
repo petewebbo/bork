@@ -8,15 +8,17 @@
 
 namespace bork {
 
+enum class input_mode { normal, copy, pattern_select, edit_select };
+
 // UI-thread only: one editing copy, its metadata, and a deliberate clipboard.
-class GridWidget {
+class EditorState {
 public:
     static constexpr uint32_t kDefaultNoteNumber = DEFAULT_NOTE_NUMBER;
     static constexpr size_t ROWS = 5;
     static constexpr size_t COLS = MAX_PATTERN_STEPS;
     enum class edit_field { note, velocity, length };
 
-    explicit GridWidget(pattern_store& store) : store_(store) {
+    explicit EditorState(pattern_store& store) : store_(store) {
         desired_playing_ = store_.ui_status_.playing.load(std::memory_order_relaxed);
         select_pattern(0);
     }
@@ -40,30 +42,30 @@ public:
         return togglecell();
     }
     bool input_mode_key(int key) {
-        if (awaiting_edit_) {
-            if (key == 27) awaiting_edit_ = false;
+        if (mode_ == input_mode::edit_select) {
+            if (key == 27) mode_ = input_mode::normal;
             else if (key == 'n' || key == 'v' || key == 'l') {
                 edit_field_ = key == 'n' ? edit_field::note
                     : key == 'v' ? edit_field::velocity : edit_field::length;
-                awaiting_edit_ = false;
+                mode_ = input_mode::normal;
             }
             return true;
         }
-        if (awaiting_pattern_) return pattern_input(key);
-        if (awaiting_copy_) {
-            if (key == 27) { awaiting_copy_ = false; message_ = nullptr; }
+        if (mode_ == input_mode::pattern_select) return pattern_input(key);
+        if (mode_ == input_mode::copy) {
+            if (key == 27) { mode_ = input_mode::normal; message_ = nullptr; }
             else if (key == 'p' || key == 's') {
-                awaiting_copy_ = false;
+                mode_ = input_mode::normal;
                 if (key == 'p') copy_pattern(); else copy_selection();
             }
             return true;
         }
         if (key == 'c') {
-            if (editable()) awaiting_copy_ = true;
+            if (editable()) mode_ = input_mode::copy;
             return true;
         }
         if (key == 'e') {
-            awaiting_edit_ = true;
+            mode_ = input_mode::edit_select;
             message_ = nullptr;
             return true;
         }
@@ -71,14 +73,15 @@ public:
     }
     // Prompted input must not reach editing/playback/quit controls.
     bool pattern_input(int key) {
-        if (!awaiting_pattern_) {
+        if (mode_ != input_mode::pattern_select) {
+            if (mode_ != input_mode::normal) return input_mode_key(key);
             if (key != 'p' && key != 'P') return false;
-            awaiting_pattern_ = true;
+            mode_ = input_mode::pattern_select;
             return true;
         }
-        if (key == 27) awaiting_pattern_ = false;
+        if (key == 27) mode_ = input_mode::normal;
         else if (key >= '1' && key <= '8') {
-            awaiting_pattern_ = false;
+            mode_ = input_mode::normal;
             select_pattern(static_cast<size_t>(key - '1'));
         }
         return true;
@@ -97,7 +100,7 @@ public:
         recovering_ = false;
         resync_request_ = 0;
         recovered_through_ = 0;
-        awaiting_copy_ = false;
+        if (mode_ == input_mode::copy) mode_ = input_mode::normal;
         selection_.reset();
         return true;
     }
@@ -226,9 +229,7 @@ public:
     size_t loaded_pattern_{NUM_STORED_PATTERNS};
     size_t playing_pattern_{};
     bool switch_pending_{};
-    bool awaiting_pattern_{};
-    bool awaiting_copy_{};
-    bool awaiting_edit_{};
+    input_mode mode_{input_mode::normal};
     edit_field edit_field_{edit_field::note};
     bool queue_full_{};
     const char* message_{};
@@ -305,7 +306,5 @@ private:
     size_t clipboard_rows_{}, clipboard_cols_{};
     std::array<char, 96> feedback_{};
 };
-
-void run_grid_tui(GridWidget& widget, const sequencer_status& status);
 
 } // namespace bork

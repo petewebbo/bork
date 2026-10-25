@@ -52,31 +52,32 @@ CPMAddPackage(
     OPTIONS "BUILD_TESTS OFF" "BUILD_EXAMPLES OFF"
 )
 
-set(CURSES_NEED_NCURSES TRUE)
-find_package(Curses REQUIRED)
+include(cmake/FTXUI.cmake)
 find_package(Threads REQUIRED)
 
-add_executable(bork src/app/main.cpp src/ui/grid_tui.cpp)
-target_include_directories(bork PRIVATE
-    src
-    ${CURSES_INCLUDE_DIRS}
+set(BORK_UI_SOURCES
+    src/ui/pattern_grid.cpp
+    src/ui/editor_component.cpp
+    src/ui/run_tui.cpp
 )
+add_executable(bork src/app/main.cpp ${BORK_UI_SOURCES})
+target_include_directories(bork PRIVATE src)
 target_link_libraries(bork PRIVATE
     fmt::fmt
     portaudio_static
     AudioFile
     SPSCQueue::SPSCQueue
     Threads::Threads
-    ${CURSES_LIBRARIES}
+    ftxui::ftxui
 )
 if(USE_JACK)
     target_compile_definitions(bork PRIVATE BORK_USE_JACK)
 endif()
 
-add_executable(bork_preview src/app/preview.cpp src/ui/grid_tui.cpp)
-target_include_directories(bork_preview PRIVATE src ${CURSES_INCLUDE_DIRS})
+add_executable(bork_preview src/app/preview.cpp ${BORK_UI_SOURCES})
+target_include_directories(bork_preview PRIVATE src)
 target_link_libraries(bork_preview PRIVATE
-    ${CURSES_LIBRARIES} SPSCQueue::SPSCQueue Threads::Threads)
+    ftxui::ftxui SPSCQueue::SPSCQueue Threads::Threads)
 
 include(CTest)
 if(BUILD_TESTING)
@@ -88,10 +89,12 @@ if(BUILD_TESTING)
         tests/edit_batch_test.cpp
         tests/selection_clipboard_test.cpp
         tests/playhead_test.cpp
+        tests/ui_component_test.cpp
+        ${BORK_UI_SOURCES}
     )
     target_include_directories(bork_tests PRIVATE src)
     target_link_libraries(bork_tests PRIVATE
-        portaudio_static SPSCQueue::SPSCQueue AudioFile fmt::fmt Threads::Threads)
+        portaudio_static SPSCQueue::SPSCQueue AudioFile fmt::fmt Threads::Threads ftxui::ftxui)
     add_test(NAME bork_tests COMMAND bork_tests)
     set_tests_properties(bork_tests PROPERTIES TIMEOUT 10)
 endif()

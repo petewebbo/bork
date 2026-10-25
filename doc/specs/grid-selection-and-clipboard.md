@@ -41,9 +41,9 @@ No system clipboard integration or cross-process data.
   selection; light-grey selection styling takes precedence for multi-selection.
 - Selection colour has a basic-colour/monochrome fallback.
 - Detect Shift from each arrow event; do not depend on key-release events.
-  Ncurses support for shifted arrows varies by terminal/terminfo. Register known
-  extended keys where available and document/test supported terminals. Do not
-  silently treat unsupported sequences as destructive editing commands.
+  FTXUI events handle plain arrows/Home/End; Shift and Ctrl+Shift arrows use
+  standard xterm modifier encodings. Terminal shortcut interception can prevent
+  delivery. Unsupported sequences must not become destructive editing commands.
 
 ## Copy command mode
 

@@ -278,10 +278,10 @@ its current/pending and queued references without requiring another callback.
 Do not let shutdown retries wait forever for a stopped consumer. Exception paths
 must preserve this ordering too.
 
-Change the existing GridWidget bank reference to one editing copy, move edit
-application/metadata into store, and replace sequencer's bank with borrowed
-current/pending references. Replace old command markers, callback-side bulk
-copies and switch acknowledgement backpressure; do not retain parallel old paths.
+The UI's `EditorState` holds one editing copy. Edit application and metadata
+belong to the store, and sequencer borrows current/pending references instead of
+holding a bank. Old command markers, callback-side bulk copies and switch
+acknowledgement backpressure are removed; no parallel old paths remain.
 Preview must use the same store/UI protocol, with a non-rendering audio consumer
 that returns snapshots and publishes status. Update existing fixtures and older
 docs that describe the superseded ownership/delivery model during implementation.
